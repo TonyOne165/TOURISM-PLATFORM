@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Planet Sphere - World Countries</title>
+  <style>
+    body{margin:0;padding:0;box-sizing:border-box;background:#181818}
+    .planet-container{width:100vw;height:100vh;display:flex;justify-content:center;align-items:center;overflow:hidden;position:fixed;top:0;left:0;background:#181818}
+    #planetSphere{display:block;background:#181818;max-width:none;max-height:none}
+    @media (max-width:650px) and (min-width:481px){#planetSphere{width:100%;height:auto;max-width:100%}}
+    @media (max-width:480px){
+      .planet-container{display:none!important;width:0!important;height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
+      #planetSphere{display:none!important;width:0!important;height:0!important}
+    }
+    #assistant-bar{position:fixed;left:0;bottom:0;width:100vw;background:#222;color:#fff;padding:12px 24px;box-shadow:0 -2px 12px rgba(0,0,0,0.18);z-index:1000;display:flex;align-items:center;gap:12px;border-radius:40px;margin:24px;width:calc(100vw - 48px);box-sizing:border-box}
+    #assistant-bar span{font-weight:bold;margin-right:10px}
+    #assistant-bar input{flex:1;padding:8px 12px;border-radius:24px;border:none;font-size:1.1rem}
+    #assistant-bar button{padding:8px 18px;background:#007BFF;color:#fff;border:none;border-radius:24px;font-size:1.1rem;font-weight:bold;cursor:pointer}
+    #assistant-answer{margin-left:18px;font-weight:bold;min-width:180px}
+  </style>
+</head>
+<body>
+  <div class="planet-container">
+    <canvas id="planetSphere" width="1000" height="800" style="background:transparent"></canvas>
+  </div>
+
+  <div id="assistant-bar">
+    <span>Buscar país:</span>
+    <input id="user-question" type="text" placeholder="Busca un país o lugar turístico (ej: Castillo San Felipe, Machu Picchu)..." />
+    <button onclick="searchPlace()">Buscar</button>
+    <div id="assistant-answer"></div>
+  </div>
+
+  <script>
+/* -------------------- CONFIG / DATOS (sin import.meta) -------------------- */
+const planetCanvas = document.getElementById('planetSphere');
+const planetCtx = planetCanvas.getContext('2d');
+
+const planetConfig = { centerX:500, centerY:400, radius:360, color:'#C5C5C5', rotationSpeed:0.005 };
+
+/* (AQUÍ VA EL RESTO DE TUS DATOS: worldCountries, countryConnections, countryBorders) */
+/* Para acortar la respuesta los conservo tal cual en tu archivo original. */
+
+const worldCountries = [
+  { name: 'USA', lat: 39.8283, lng: -98.5795 },
+  { name: 'Canada', lat: 56.1304, lng: -106.3468 },
+  { name: 'Mexico', lat: 23.6345, lng: -102.5528 },
+  { name: 'Guatemala', lat: 15.7835, lng: -90.2308 },
+  { name: 'Cuba', lat: 21.5218, lng: -77.7812 },
+  { name: 'Brazil', lat: -14.2350, lng: -51.9253 },
+  { name: 'Argentina', lat: -38.4161, lng: -63.6167 },
+  { name: 'Chile', lat: -35.6751, lng: -71.5430 },
+  { name: 'Peru', lat: -9.1900, lng: -75.0152 },
+  { name: 'Colombia', lat: 4.5709, lng: -74.2973 },
+  { name: 'Venezuela', lat: 6.4238, lng: -66.5897 },
+  { name: 'Ecuador', lat: -1.8312, lng: -78.1834 },
+  { name: 'Bolivia', lat: -16.2902, lng: -63.5887 },
+  { name: 'Uruguay', lat: -32.5228, lng: -55.7658 },
+  { name: 'Spain', lat: 40.4637, lng: -3.7492 },
+  { name: 'France', lat: 46.6034, lng: 1.8883 },
+  { name: 'Germany', lat: 51.1657, lng: 10.4515 },
+  { name: 'Italy', lat: 41.8719, lng: 12.5674 },
+  { name: 'UK', lat: 55.3781, lng: -3.4360 },
+  { name: 'Russia', lat: 61.5240, lng: 105.3188 },
+  { name: 'Norway', lat: 60.4720, lng: 8.4689 },
+  { name: 'Sweden', lat: 60.1282, lng: 18.6435 },
+  { name: 'Poland', lat: 51.9194, lng: 19.1451 },
+  { name: 'Ukraine', lat: 48.3794, lng: 31.1656 },
+  { name: 'Egypt', lat: 26.0975, lng: 31.2753 },
+  { name: 'South Africa', lat: -30.5595, lng: 22.9375 },
+  { name: 'Nigeria', lat: 9.0820, lng: 8.6753 },
+  { name: 'Kenya', lat: -0.0236, lng: 37.9062 },
+  { name: 'Morocco', lat: 31.7917, lng: -7.0926 },
+  { name: 'Algeria', lat: 28.0339, lng: 1.6596 },
+  { name: 'Libya', lat: 26.3351, lng: 17.2283 },
+  { name: 'Ethiopia', lat: 9.1450, lng: 40.4897 },
+  { name: 'Ghana', lat: 7.9465, lng: -1.0232 },
+  { name: 'China', lat: 35.8617, lng: 104.1954 },
+  { name: 'India', lat: 20.5937, lng: 78.9629 },
+  { name: 'Japan', lat: 36.2048, lng: 138.2529 },
+  { name: 'South Korea', lat: 35.9078, lng: 127.7669 },
+  { name: 'Thailand', lat: 15.87, lng: 100.9925 },
+  { name: 'Indonesia', lat: -0.7893, lng: 113.9213 },
+  { name: 'Saudi Arabia', lat: 23.8859, lng: 45.0792 },
+  { name: 'Iran', lat: 32.4279, lng: 53.6880 },
+  { name: 'Turkey', lat: 38.9637, lng: 35.2433 },
+  { name: 'Kazakhstan', lat: 48.0196, lng: 66.9237 },
+  { name: 'Mongolia', lat: 46.8625, lng: 103.8467 },
+  { name: 'Pakistan', lat: 30.3753, lng: 69.3451 },
+  { name: 'Afghanistan', lat: 33.9391, lng: 67.71 },
+  { name: 'Vietnam', lat: 14.0583, lng: 108.2772 },
+  { name: 'Myanmar', lat: 21.9162, lng: 95.9560 },
+  { name: 'Australia', lat: -25.2744, lng: 133.7751 },
+  { name: 'New Zealand', lat: -40.9006, lng: 174.8860 },
+  { name: 'Papua New Guinea', lat: -6.314, lng: 143.9555 }
+];
+
+const countryConnections = [
+  ['USA','Canada'],['USA','Mexico'],['Mexico','Guatemala'],['Guatemala','Mexico'],['Cuba','USA'],
+  ['Brazil','Argentina'],['Brazil','Peru'],['Brazil','Colombia'],['Brazil','Venezuela'],['Brazil','Bolivia'],
+  ['Brazil','Uruguay'],['Argentina','Chile'],['Argentina','Bolivia'],['Argentina','Uruguay'],['Chile','Peru'],
+  ['Chile','Bolivia'],['Peru','Colombia'],['Peru','Ecuador'],['Peru','Bolivia'],['Colombia','Venezuela'],
+  ['Colombia','Ecuador'],['Venezuela','Brazil'],['Ecuador','Peru'],['Bolivia','Peru'],['Bolivia','Chile'],
+  ['Bolivia','Argentina'],['Spain','France'],['France','Germany'],['France','Italy'],['Germany','Poland'],
+  ['UK','France'],['Russia','Ukraine'],['Russia','Kazakhstan'],['Norway','Sweden'],['Sweden','Norway'],
+  ['Poland','Germany'],['Ukraine','Poland'],['Ukraine','Russia'],['Egypt','Libya'],['South Africa','Nigeria'],
+  ['Nigeria','Ghana'],['Kenya','Ethiopia'],['Morocco','Algeria'],['Algeria','Libya'],['Libya','Egypt'],
+  ['Ethiopia','Kenya'],['Ghana','Nigeria'],['China','India'],['China','Russia'],['China','Kazakhstan'],
+  ['China','Mongolia'],['China','Pakistan'],['China','Afghanistan'],['China','Myanmar'],['China','Vietnam'],
+  ['India','Pakistan'],['Japan','South Korea'],['Thailand','Vietnam'],['Thailand','Myanmar'],['Indonesia','Australia'],
+  ['Saudi Arabia','Iran'],['Iran','Turkey'],['Iran','Afghanistan'],['Iran','Pakistan'],['Turkey','Russia'],
+  ['Kazakhstan','Russia'],['Mongolia','Russia'],['Pakistan','Afghanistan'],['Afghanistan','Iran'],['Vietnam','China'],
+  ['Myanmar','India'],['Myanmar','China'],['Myanmar','Thailand'],['Russia','China'],['Turkey','Europe'],
+  ['Egypt','Saudi Arabia'],['USA','Russia'],['Spain','Morocco'],['Australia','Indonesia'],
+  ['Australia','New Zealand'],['Papua New Guinea','Australia']
+];
+
+const countryBorders = {
+  'USA': [[49.0,-125.0],[49.0,-95.0],[49.0,-89.0],[45.0,-83.0],[42.0,-83.0],[35.0,-81.0],[31.0,-81.0],[25.0,-81.0],[25.0,-97.0],[32.0,-117.0],[49.0,-125.0]],
+  'Canada': [[49.0,-141.0],[69.0,-141.0],[83.0,-95.0],[83.0,-60.0],[60.0,-60.0],[49.0,-89.0],[49.0,-95.0],[49.0,-125.0],[49.0,-141.0]],
+  'Mexico': [[32.0,-117.0],[25.0,-97.0],[21.0,-97.0],[16.0,-95.0],[14.0,-92.0],[17.0,-88.0],[21.0,-87.0],[26.0,-109.0],[32.0,-117.0]],
+  'Brazil': [[5.0,-60.0],[5.0,-35.0],[-5.0,-35.0],[-18.0,-39.0],[-34.0,-54.0],[-34.0,-70.0],[-16.0,-70.0],[-2.0,-68.0],[5.0,-60.0]],
+  'Argentina': [[-22.0,-65.0],[-22.0,-54.0],[-34.0,-54.0],[-55.0,-67.0],[-55.0,-74.0],[-40.0,-73.0],[-22.0,-69.0],[-22.0,-65.0]],
+  'Russia': [[77.0,180.0],[77.0,-180.0],[65.0,-169.0],[60.0,160.0],[50.0,142.0],[42.0,131.0],[50.0,82.0],[68.0,33.0],[77.0,180.0]],
+  'China': [[54.0,134.0],[40.0,124.0],[32.0,121.0],[18.0,109.0],[21.0,100.0],[28.0,87.0],[36.0,76.0],[43.0,80.0],[48.0,88.0],[54.0,134.0]],
+  'India': [[37.0,74.0],[28.0,97.0],[21.0,88.0],[8.0,77.0],[8.0,68.0],[23.0,68.0],[24.0,71.0],[37.0,74.0]],
+  'Australia': [[-10.0,142.0],[-10.0,154.0],[-28.0,154.0],[-39.0,146.0],[-35.0,117.0],[-26.0,113.0],[-12.0,129.0],[-10.0,142.0]]
+};
+
+/* -------------------- FUNCIONES GEOMETRÍA -------------------- */
+function geoToSpherical(lat, lng){
+  const phi = (90 - lat) * Math.PI / 180;
+  const theta = (lng + 180) * Math.PI / 180;
+  return { theta, phi };
+}
+function sphereTo2D(theta, phi, rotation){
+  const adjustedTheta = theta + rotation;
+  const x = Math.sin(phi) * Math.cos(adjustedTheta);
+  const y = -Math.cos(phi);
+  const z = Math.sin(phi) * Math.sin(adjustedTheta);
+  const screenX = planetConfig.centerX + x * planetConfig.radius;
+  const screenY = planetConfig.centerY + y * planetConfig.radius;
+  return { x: screenX, y: screenY, z: z, visible: z > -0.2 };
+}
+function sphereTo2D_custom(theta, phi, rotation, centerX, centerY, radius){
+  const adjustedTheta = theta + rotation;
+  const x = Math.sin(phi) * Math.cos(adjustedTheta);
+  const y = -Math.cos(phi);
+  const z = Math.sin(phi) * Math.sin(adjustedTheta);
+  const screenX = centerX + x * radius;
+  const screenY = centerY + y * radius;
+  return { x: screenX, y: screenY, z: z, visible: z > -0.2 };
+}
+
+/* -------------------- DIBUJADO -------------------- */
+function generateGridLines(){
+  const lines=[];
+  for(let lat=-80; lat<=80; lat+=20){
+    const phi=(90-lat)*Math.PI/180; const line=[];
+    for(let lon=-180; lon<=180; lon+=8){ const theta=(lon+180)*Math.PI/180; line.push({theta,phi}); }
+    lines.push(line);
+  }
+  for(let lon=-180; lon<180; lon+=30){
+    const theta=(lon+180)*Math.PI/180; const line=[];
+    for(let lat=-90; lat<=90; lat+=3){ const phi=(90-lat)*Math.PI/180; line.push({theta,phi}); }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function drawCountryBorders_custom(rotation, centerX, centerY, radius){
+  planetCtx.strokeStyle = planetConfig.color;
+  planetCtx.globalAlpha = 0.4;
+  planetCtx.lineWidth = 0.8;
+  Object.entries(countryBorders).forEach(([countryName, coordinates])=>{
+    planetCtx.beginPath();
+    let firstPoint=true; const projectedPoints=[];
+    coordinates.forEach(([lat,lng])=>{
+      const spherical = geoToSpherical(lat,lng);
+      const projected = sphereTo2D_custom(spherical.theta,spherical.phi,rotation,centerX,centerY,radius);
+      projectedPoints.push(projected);
+    });
+    const visibleCount = projectedPoints.filter(p=>p.visible).length;
+    if(visibleCount > coordinates.length * 0.3){
+      projectedPoints.forEach(projected=>{
+        if(projected.visible){
+          if(firstPoint){ planetCtx.moveTo(projected.x,projected.y); firstPoint=false; }
+          else planetCtx.lineTo(projected.x,projected.y);
+        } else { firstPoint=true; }
+      });
+      planetCtx.stroke();
+    }
+  });
+  planetCtx.globalAlpha = 1.0;
+}
+
+/* -------------------- PREPARAR PAISES / ANIMACIÓN -------------------- */
+const gridLines = generateGridLines();
+const countryPoints = worldCountries.map(country=>{
+  const spherical = geoToSpherical(country.lat, country.lng);
+  return { name: country.name, theta: spherical.theta, phi: spherical.phi, lat: country.lat, lng: country.lng };
+});
+
+let rotation = 0;
+let zooming = false;
+let zoomProgress = 0;
+let zoomTarget = null;
+let zoomStartRadius = planetConfig.radius;
+let zoomEndRadius = Math.max(planetConfig.centerX, planetConfig.centerY) * 2.2;
+let zoomStartCenter = { x: planetConfig.centerX, y: planetConfig.centerY };
+let zoomEndCenter = { x: planetConfig.centerX, y: planetConfig.centerY };
+let zoomStartRotation = 0;
+let zoomEndRotation = 0;
+let hoveredCountry = null;
+let zoomedOut = false;
+let redirectUrl = null;
+let pointColor = '#C5C5C5';
+
+const hoverRadiusMap = new Map();
+const BASE_RADIUS = 4;
+const HOVER_RADIUS = 14;
+const HOVER_SPEED = 0.25;
+
+planetCanvas.addEventListener('mousemove', function(e){
+  if(zooming || zoomedOut) return;
+  const rect = planetCanvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  let found = null;
+  for(const country of countryPoints){
+    const projected = sphereTo2D(country.theta, country.phi, rotation);
+    if(projected.visible){
+      const dx = mouseX - projected.x, dy = mouseY - projected.y;
+      if(dx*dx + dy*dy < HOVER_RADIUS*HOVER_RADIUS){ found = country; break; }
+    }
+  }
+  hoveredCountry = found;
+});
+planetCanvas.addEventListener('mouseleave', ()=>{ if(!zooming && !zoomedOut) hoveredCountry=null; });
+
+planetCanvas.addEventListener('click', function(e){
+  if(zooming || zoomedOut) return;
+  const rect = planetCanvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+  for(const country of countryPoints){
+    const projected = sphereTo2D(country.theta, country.phi, rotation);
+    if(projected.visible){
+      const pointRadius = hoverRadiusMap.get(country.name) || BASE_RADIUS;
+      const dx = mouseX - projected.x, dy = mouseY - projected.y;
+      if(dx*dx + dy*dy < pointRadius*pointRadius){
+        zooming = true; zoomProgress = 0; zoomTarget = country;
+        redirectUrl = country.name.toLowerCase() === 'colombia' ? 'yau.html' : null;
+        zoomStartRadius = planetConfig.radius;
+        zoomEndRadius = Math.max(planetConfig.centerX, planetConfig.centerY) * 2.2;
+        zoomStartCenter = { x: planetConfig.centerX, y: planetConfig.centerY };
+        zoomEndCenter = { x: projected.x, y: projected.y };
+        zoomStartRotation = rotation;
+        zoomEndRotation = country.theta - Math.PI/2;
+        pointColor = planetConfig.color;
+        break;
+      }
+    }
+  }
+});
+
+function lerp(a,b,t){ return a + (b-a) * t; }
+
+let fadeStarted=false;
+function startFadeAndRedirect(){
+  if(fadeStarted) return;
+  fadeStarted=true;
+  const fadeDiv = document.createElement('div');
+  fadeDiv.style.position='fixed'; fadeDiv.style.left='0'; fadeDiv.style.top='0';
+  fadeDiv.style.width='100vw'; fadeDiv.style.height='100vh'; fadeDiv.style.background='#181818';
+  fadeDiv.style.opacity='0'; fadeDiv.style.transition='opacity 1s'; fadeDiv.style.zIndex='9999';
+  document.body.appendChild(fadeDiv);
+  setTimeout(()=>{ fadeDiv.style.opacity='1'; }, 10);
+  setTimeout(()=>{ 
+    if (redirectUrl) {
+      window.location.href = redirectUrl;
+    }
+  }, 1100);
+}
+
+function fillScreenWithPointColor(){
+  planetCtx.save();
+  planetCtx.globalAlpha=1;
+  planetCtx.fillStyle='#181818';
+  planetCtx.fillRect(0,0,planetCanvas.width,planetCanvas.height);
+  planetCtx.restore();
+}
+
+function drawPlanet(){
+  if(zoomedOut){ fillScreenWithPointColor(); startFadeAndRedirect(); return; }
+
+  // Animar radios
+  for(const country of countryPoints){
+    let targetRadius = BASE_RADIUS;
+    if(hoveredCountry && hoveredCountry.name === country.name && !zooming && !zoomedOut) targetRadius = HOVER_RADIUS;
+    let currentRadius = hoverRadiusMap.get(country.name) || BASE_RADIUS;
+    currentRadius += (targetRadius - currentRadius) * HOVER_SPEED;
+    hoverRadiusMap.set(country.name, currentRadius);
+  }
+
+  let currentRadius = planetConfig.radius;
+  let currentCenterX = planetConfig.centerX;
+  let currentCenterY = planetConfig.centerY;
+  let currentRotation = rotation;
+
+  if(zooming && zoomTarget){
+    zoomProgress = Math.min(zoomProgress + 0.012, 1);
+    currentRadius = lerp(zoomStartRadius, zoomEndRadius, zoomProgress);
+    currentRotation = lerp(zoomStartRotation, zoomEndRotation, zoomProgress);
+    currentCenterX = lerp(zoomStartCenter.x, zoomEndCenter.x, zoomProgress);
+    currentCenterY = lerp(zoomStartCenter.y, zoomEndCenter.y, zoomProgress);
+    if(zoomProgress >= 1){ zooming=false; zoomedOut=true; }
+  } else if(!zoomedOut){
+    rotation += planetConfig.rotationSpeed;
+    currentRotation = rotation;
+  }
+
+  planetCtx.clearRect(0,0,planetCanvas.width,planetCanvas.height);
+
+  // Dibujar grid
+  planetCtx.strokeStyle = planetConfig.color;
+  planetCtx.globalAlpha = 0.7;
+  planetCtx.lineWidth = 1;
+  gridLines.forEach(line=>{
+    planetCtx.beginPath(); let firstPoint=true;
+    line.forEach(point=>{
+      const projected = sphereTo2D_custom(point.theta, point.phi, currentRotation, currentCenterX, currentCenterY, currentRadius);
+      if(projected.visible){
+        if(firstPoint){ planetCtx.moveTo(projected.x, projected.y); firstPoint=false; }
+        else planetCtx.lineTo(projected.x, projected.y);
+      } else { firstPoint=true; }
+    });
+    planetCtx.stroke();
+  });
+  planetCtx.globalAlpha = 1.0;
+
+  // Dibujar borders y conexiones
+  drawCountryBorders_custom(currentRotation, currentCenterX, currentCenterY, currentRadius);
+
+  const visibleCountries = [];
+  const countryPositions = new Map();
+  countryPoints.forEach(country=>{
+    const projected = sphereTo2D_custom(country.theta, country.phi, currentRotation, currentCenterX, currentCenterY, currentRadius);
+    countryPositions.set(country.name, projected);
+    if(projected.visible) visibleCountries.push({...country, ...projected});
+  });
+
+  planetCtx.strokeStyle = planetConfig.color; planetCtx.lineWidth = 1.5;
+  countryConnections.forEach(([c1,c2])=>{
+    const pos1 = countryPositions.get(c1), pos2 = countryPositions.get(c2);
+    if(pos1 && pos2 && pos1.visible && pos2.visible){
+      planetCtx.beginPath(); planetCtx.moveTo(pos1.x,pos1.y); planetCtx.lineTo(pos2.x,pos2.y); planetCtx.stroke();
+    }
+  });
+
+  visibleCountries.forEach(country=>{
+    planetCtx.beginPath();
+    let pointRadius = hoverRadiusMap.get(country.name) || BASE_RADIUS;
+    planetCtx.arc(country.x, country.y, pointRadius, 0, Math.PI*2);
+    planetCtx.fillStyle = planetConfig.color; planetCtx.fill();
+    planetCtx.fillStyle = planetConfig.color; planetCtx.font = '18px Arial';
+    planetCtx.fillText(country.name, country.x + 8, country.y - 8);
+  });
+}
+
+function animatePlanet(){ drawPlanet(); requestAnimationFrame(animatePlanet); }
+animatePlanet();
+
+/* -------------------- BÚSQUEDA LOCAL (zoom por nombre) -------------------- */
+function zoomToCountryByName(name){
+  const country = countryPoints.find(c => c.name.toLowerCase() === name.trim().toLowerCase());
+  if(!country) return false;
+  const projected = sphereTo2D(country.theta, country.phi, rotation);
+  zooming = true; zoomProgress = 0; zoomTarget = country;
+  redirectUrl = country.name.toLowerCase() === 'colombia' ? 'yau.html' : null;
+  zoomStartRadius = planetConfig.radius;
+  zoomEndRadius = Math.max(planetConfig.centerX, planetConfig.centerY) * 2.2;
+  zoomStartCenter = { x: planetConfig.centerX, y: planetConfig.centerY };
+  zoomEndCenter = { x: projected.x, y: projected.y };
+  zoomStartRotation = rotation;
+  zoomEndRotation = country.theta - Math.PI/2;
+  pointColor = planetConfig.color;
+  return true;
+}
+
+/* -------------------- FUNCIÓN DE BÚSQUEDA DE LUGARES TURÍSTICOS -------------------- */
+/**
+ * @function getCoordinatesFromNominatim
+ * @description Usa Nominatim (OpenStreetMap) para obtener coordenadas GRATIS
+ *              Sin necesidad de API key de Google
+ * @param {string} locationName - Nombre del lugar turístico a buscar
+ * @returns {Promise<Object|null>} Objeto con {lat, lng} o null si no encuentra
+ */
+async function getCoordinatesFromNominatim(locationName) {
+  try {
+    const encodedLocation = encodeURIComponent(locationName.trim());
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodedLocation}&limit=1`,
+      { headers: { 'User-Agent': 'TourismPlatform/1.0' } }
+    );
+    const data = await response.json();
+    
+    if (data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        displayName: data[0].display_name
+      };
+    }
+  } catch (error) {
+    console.error('Error obteniendo coordenadas:', error);
+  }
+  return null;
+}
+
+/**
+ * @function generateGoogleMapsStreetViewUrl
+ * @description Genera la URL correcta de Google Maps Street View con coordenadas
+ * @param {number} lat - Latitud
+ * @param {number} lng - Longitud
+ * @returns {string} URL de Google Maps Street View
+ */
+function generateGoogleMapsStreetViewUrl(lat, lng) {
+  // Formato: @lat,lng,75m fuerza Street View a nivel del terreno
+  // /data=!3m4!1e1!3m2!1e0!2e0 activa Street View completamente
+  return `https://www.google.com/maps/@${lat},${lng},75m/data=!3m4!1e1!3m2!1e0!2e0`;
+}
+
+/**
+ * @function searchPlace
+ * @description Busca un lugar: primero intenta encontrarlo en el planeta (países),
+ *              si no lo encuentra, geocodifica con Nominatim y abre Google Maps Street View
+ */
+async function searchPlace() {
+  const searchInput = document.getElementById('user-question');
+  const answerElement = document.getElementById('assistant-answer');
+  const query = searchInput.value.trim();
+
+  // Validar que escribió algo
+  if (!query || query.length === 0) {
+    answerElement.innerHTML = "⚠️ Escribe un país o lugar turístico para buscar.";
+    return;
+  }
+
+  // Intentar buscar en el planeta (países)
+  if (zoomToCountryByName(query)) {
+    answerElement.innerHTML = "🌍 Mostrando en el planeta...";
+    return;
+  }
+
+  // Si no encontró en el planeta, buscar en Google Maps Street View (360°)
+  answerElement.innerHTML = "🔍 Buscando ubicación...";
+  
+  // Obtener coordenadas usando Nominatim (OpenStreetMap - GRATIS)
+  const coords = await getCoordinatesFromNominatim(query);
+  
+  if (coords) {
+    answerElement.innerHTML = `📍 Abriendo Street View de: ${coords.displayName}...`;
+    const mapsUrl = generateGoogleMapsStreetViewUrl(coords.lat, coords.lng);
+    
+    setTimeout(() => {
+      window.location.href = mapsUrl;
+    }, 800);
+  } else {
+    answerElement.innerHTML = "❌ No encontramos ese lugar. Intenta con otro nombre.";
+  }
+}
+
+document.getElementById('user-question').addEventListener('keydown', function(e){
+  if(e.key === 'Enter') searchPlace();
+});
+  </script>
+</body>
+</html>

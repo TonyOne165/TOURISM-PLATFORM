@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // ============ USERS ============
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && !('role' in request.resource.data && request.resource.data.role != resource.data.role)
+                    || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============ TOURS ============
+    match /tours/{tourId} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============ BOOKINGS ============
+    match /bookings/{bookingId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status in ['pending', 'confirmed', 'cancelled', 'completed'];
+      allow update: if isOwner(resource.data.userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============ ACCOMMODATIONS ============
+    match /accommodations/{accommodationId} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============ REVIEWS ============
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5;
+      allow update: if isOwner(resource.data.userId) || isAdmin();
+      allow delete: if isOwner(resource.data.userId) || isAdmin();
+    }
+
+    // ============ PROMOTIONS ============
+    match /promotions/{promotionId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      // Allow admin full update; allow authenticated users to only increment currentUses
+      allow update: if isAdmin()
+                    || (isAuthenticated()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentUses'])
+                        && request.resource.data.currentUses == resource.data.currentUses + 1);
+    }
+
+    // ============ MESSAGES ============
+    match /messages/{messageId} {
+      allow read: if isAuthenticated()
+                  && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid)
+                  || isAdmin();
+      allow create: if isAuthenticated()
+                    && request.resource.data.senderId == request.auth.uid;
+      allow update: if isAuthenticated()
+                    && (resource.data.receiverId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ============ VISITED DESTINATIONS ============
+    match /visited_destinations/{destId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isOwner(resource.data.userId);
+      allow delete: if isAdmin();
+    }
+
+    // ============ JOIN REQUESTS (Contact Form) ============
+    match /join_requests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if true; // Public contact form — anyone can submit
+      allow update, delete: if isAdmin();
+    }
+
+    // ============ ANALYTICS ============
+    match /analytics/{eventId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

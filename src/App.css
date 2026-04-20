@@ -1,0 +1,298 @@
+/* Main app styles */
+:root {
+  --border-radius: 0.5rem;
+  --brand-black: #000101;
+  --brand-dark: #0C2E3D;
+  --brand-blue: #186784;
+  --brand-brown: #9A7C65;
+  --brand-beige: #C0A088;
+  --brand-cream: #DAC6B6;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: var(--brand-black);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Smooth transitions */
+* {
+  transition: color 0.3s ease, background-color 0.3s ease;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--brand-beige);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--brand-brown);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-blue);
+}
+
+/* Loading spinner animation */
+.loading {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive utility classes */
+@media (max-width: 640px) {
+  .hide-sm {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .hide-md {
+    display: none;
+  }
+}
+
+/* Card hover effect */
+.card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px rgba(0, 1, 1, 0.25);
+}
+
+/* Button styles */
+.btn {
+  transition: all 0.3s ease;
+  font-weight: 600;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+/* Hero section */
+.hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(0, 1, 1, 0.3), rgba(12, 46, 61, 0.2));
+  pointer-events: none;
+}
+
+/* Custom badge styles */
+.badge {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Image transitions */
+img {
+  transition: transform 0.3s ease;
+}
+
+img:hover {
+  transform: scale(1.05);
+}
+
+/* Link styles */
+a {
+  transition: color 0.3s ease;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+/* Alert animations */
+.alert {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Form focus effects */
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(24, 103, 132, 0.15);
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  backdrop-filter: blur(5px);
+}
+
+/* Navbar sticky */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: 0 2px 8px rgba(0, 1, 1, 0.2);
+}
+
+/* Footer */
+footer {
+  margin-top: auto;
+}
+
+/* Responsive grid */
+@media (max-width: 639px) {
+  .grid:not([class*="grid-cols-"]) {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1024px) {
+  .grid-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Loading skeleton */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--brand-cream) 25%,
+    var(--brand-beige) 50%,
+    var(--brand-cream) 75%
+  );
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Map container */
+.leaflet-container {
+  border-radius: 0.5rem;
+  z-index: 1;
+}
+
+/* Marker popup */
+.leaflet-popup-content {
+  font-size: 14px;
+}
+
+/* Tour card specific */
+.tour-card {
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.tour-image {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+}
+
+@media (min-width: 640px) {
+  .tour-image {
+    height: 250px;
+  }
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+p {
+  line-height: 1.6;
+  color: var(--brand-dark);
+}
+
+/* Utility spacing */
+.space-between-sections {
+  margin: 2rem 0;
+}
+
+@media (min-width: 640px) {
+  .space-between-sections {
+    margin: 4rem 0;
+  }
+}
+
+/* DaisyUI theme customization */
+[data-theme="tourism"] {
+  --primary: #186784;
+  --primary-focus: #0C2E3D;
+  --primary-content: #ffffff;
+  --secondary: #9A7C65;
+  --secondary-focus: #856A53;
+  --secondary-content: #ffffff;
+  --accent: #C0A088;
+  --accent-focus: #9A7C65;
+  --accent-content: #0C2E3D;
+  --neutral: #0C2E3D;
+  --neutral-focus: #000101;
+  --neutral-content: #DAC6B6;
+  --base-100: #DAC6B6;
+  --base-200: #C0A088;
+  --base-300: #9A7C65;
+  --base-content: #0C2E3D;
+  --info: #186784;
+  --success: #22c55e;
+  --warning: #eab308;
+  --error: #ef4444;
+  --rounded-box: 0.5rem;
+  --rounded-btn: 0.375rem;
+  --rounded-badge: 0.375rem;
+  --border-btn: 1px;
+  --animation-btn: 0.3s;
+  --animation-input: 0.3s;
+  --padding-card: 1.5rem;
+  --btn-text-case: normal;
+  --btn-focus-scale: 1.05;
+  --navbar-padding: 0.5rem 1rem;
+  --border-opacity: 0.2;
+}

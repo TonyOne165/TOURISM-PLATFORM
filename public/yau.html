@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa Interactivo de Colombia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'IBM Plex Sans', sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            background: #0f172a;
+        }
+
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            background: #0f172a;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .leaflet-container {
+            background: #1e293b;
+            font-family: 'IBM Plex Sans', sans-serif;
+        }
+
+        /* Sidebar desplegable */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 450px;
+            height: 100vh;
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(10px);
+            box-shadow: 4px 0 30px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            border-right: 2px solid #3b82f6;
+        }
+
+        .sidebar.hidden {
+            left: -450px;
+        }
+
+        .sidebar-content {
+            padding: 40px 30px;
+            color: #e2e8f0;
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #334155;
+        }
+
+        .sidebar-title {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #3b82f6;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 0;
+            line-height: 1;
+        }
+
+        .close-btn:hover {
+            transform: rotate(90deg);
+            color: #3b82f6;
+        }
+
+        .sidebar h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #60a5fa;
+        }
+
+        .sidebar h3 {
+            font-size: 1.2rem;
+            font-weight: 500;
+            margin: 25px 0 12px 0;
+            color: #3b82f6;
+        }
+
+        .sidebar p, .sidebar div {
+            font-size: 1rem;
+            line-height: 1.7;
+            color: #cbd5e1;
+            margin-bottom: 10px;
+        }
+
+        .sidebar ul {
+            margin: 10px 0 20px 20px;
+            list-style: none;
+        }
+
+        .sidebar li {
+            position: relative;
+            padding-left: 20px;
+            margin-bottom: 8px;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+
+        .sidebar li:before {
+            content: "▸";
+            position: absolute;
+            left: 0;
+            color: #3b82f6;
+            font-weight: bold;
+        }
+
+        /* Toggle button */
+        .toggle-btn {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            z-index: 999;
+            background: #3b82f6;
+            border: none;
+            border-radius: 12px;
+            width: 60px;
+            height: 60px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+            transition: all 0.3s ease;
+        }
+
+        .toggle-btn:hover {
+            transform: scale(1.05);
+            background: #2563eb;
+            box-shadow: 0 6px 30px rgba(59, 130, 246, 0.6);
+        }
+
+        .toggle-btn.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .hamburger {
+            width: 24px;
+            height: 20px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .hamburger span {
+            display: block;
+            height: 3px;
+            width: 100%;
+            background: #ffffff;
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+
+        /* Marcadores personalizados */
+        .custom-marker {
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            border: 2px solid #fca5a5;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .custom-marker:hover {
+            width: 16px;
+            height: 16px;
+            background: #3b82f6;
+            border-color: #93c5fd;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
+        }
+
+        /* Popup personalizado */
+        .leaflet-popup-content-wrapper {
+            background: rgba(15, 23, 42, 0.98);
+            border: 2px solid #3b82f6;
+            border-radius: 12px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+            padding: 0;
+        }
+
+        .leaflet-popup-content {
+            margin: 0;
+            padding: 20px;
+            color: #e2e8f0;
+            font-size: 14px;
+            min-width: 250px;
+        }
+
+        .leaflet-popup-tip {
+            background: rgba(15, 23, 42, 0.98);
+            border-color: #3b82f6;
+        }
+
+        .city-popup h3 {
+            color: #60a5fa;
+            margin: 0 0 12px 0;
+            font-size: 1.4rem;
+            font-weight: 600;
+        }
+
+        .city-popup p {
+            color: #cbd5e1;
+            margin: 8px 0;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .city-popup strong {
+            color: #e2e8f0;
+            font-weight: 500;
+        }
+
+        /* Controles del mapa */
+        .leaflet-control {
+            background: rgba(15, 23, 42, 0.95) !important;
+            border: 1px solid #334155 !important;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3) !important;
+            border-radius: 8px !important;
+        }
+
+        .leaflet-control-zoom-in,
+        .leaflet-control-zoom-out {
+            color: #3b82f6 !important;
+            border: none !important;
+            background: rgba(15, 23, 42, 0.95) !important;
+        }
+
+        .leaflet-control-zoom-in:hover,
+        .leaflet-control-zoom-out:hover {
+            background: #1e293b !important;
+            color: #60a5fa !important;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 90vw;
+            }
+
+            .sidebar.hidden {
+                left: -90vw;
+            }
+
+            .toggle-btn {
+                width: 50px;
+                height: 50px;
+                top: 20px;
+                left: 20px;
+            }
+
+            .sidebar-content {
+                padding: 30px 20px;
+            }
+
+            .sidebar-title {
+                font-size: 1.5rem;
+            }
+        }
+
+        /* Scrollbar personalizado */
+        .sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Botón toggle -->
+        <button class="toggle-btn hidden" id="toggleBtn">
+            <div class="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </button>
+
+        <!-- Sidebar desplegable - Abierto por defecto -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-content">
+                <div class="sidebar-header">
+                    <h1 class="sidebar-title">Colombia</h1>
+                    <button class="close-btn" id="closeBtn">&times;</button>
+                </div>
+                
+                <div>
+                    Colombia es un país ubicado en la esquina noroccidental de América del Sur, conocido por su diversidad cultural, geográfica y natural. Su capital es Bogotá.
+                </div>
+
+                <h3>Departamentos de Colombia</h3>
+                <div>Colombia está dividida en 32 departamentos y un distrito capital (Bogotá).</div>
+
+                <h3>Regiones Naturales</h3>
+                <ul>
+                    <li>Región Andina</li>
+                    <li>Región Caribe</li>
+                    <li>Región Pacífica</li>
+                    <li>Región Orinoquía</li>
+                    <li>Región Amazonía</li>
+                    <li>Región Insular</li>
+                </ul>
+
+                <h3>Ciudades principales</h3>
+                <ul>
+                    <li>Bogotá D.C. (capital)</li>
+                    <li>Medellín</li>
+                    <li>Cali</li>
+                    <li>Barranquilla</li>
+                    <li>Cartagena</li>
+                    <li>Cúcuta</li>
+                    <li>Bucaramanga</li>
+                    <li>Pereira</li>
+                    <li>Santa Marta</li>
+                    <li>Ibagué</li>
+                </ul>
+
+                <h3>Lugares turísticos destacados</h3>
+                <ul>
+                    <li>Cartagena de Indias y su ciudad amurallada</li>
+                    <li>Parque Nacional Natural Tayrona</li>
+                    <li>Islas de San Andrés y Providencia</li>
+                    <li>Eje cafetero (Salento, Valle de Cocora)</li>
+                    <li>Caño Cristales (el río de los cinco colores)</li>
+                    <li>Medellín y su transformación urbana</li>
+                    <li>Villa de Leyva</li>
+                    <li>La Guajira y Cabo de la Vela</li>
+                    <li>Amazonas colombiano</li>
+                    <li>Ciudad Perdida</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Mapa -->
+        <div id="map"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script>
+        // Datos expandidos de ciudades y departamentos de Colombia
+        const locations = [
+            // Capitales de departamento
+            {name: 'Bogotá D.C.', lat: 4.7110, lng: -74.0721, desc: 'Capital de Colombia', region: 'Región Andina', type: 'Capital Nacional', population: '7.4 millones'},
+            {name: 'Medellín', lat: 6.2442, lng: -75.5812, desc: 'Capital de Antioquia', region: 'Región Andina', type: 'Capital', population: '2.5 millones'},
+            {name: 'Cali', lat: 3.4372, lng: -76.5225, desc: 'Capital del Valle del Cauca', region: 'Región Pacífica', type: 'Capital', population: '2.2 millones'},
+            {name: 'Barranquilla', lat: 10.9639, lng: -74.7964, desc: 'Capital del Atlántico', region: 'Costa Caribe', type: 'Capital', population: '1.2 millones'},
+            {name: 'Cartagena', lat: 10.3897, lng: -75.4794, desc: 'Capital de Bolívar', region: 'Costa Caribe', type: 'Capital', population: '1 millón'},
+            {name: 'Cúcuta', lat: 7.8909, lng: -72.4876, desc: 'Capital de Norte de Santander', region: 'Región Andina', type: 'Capital', population: '711 mil'},
+            {name: 'Bucaramanga', lat: 7.1256, lng: -73.1144, desc: 'Capital de Santander', region: 'Región Andina', type: 'Capital', population: '613 mil'},
+            {name: 'Pereira', lat: 4.8139, lng: -75.6956, desc: 'Capital de Risaralda', region: 'Región Cafetera', type: 'Capital', population: '488 mil'},
+            {name: 'Santa Marta', lat: 11.2405, lng: -74.2299, desc: 'Capital del Magdalena', region: 'Costa Caribe', type: 'Capital', population: '542 mil'},
+            {name: 'Ibagué', lat: 4.4372, lng: -75.2327, desc: 'Capital del Tolima', region: 'Región Andina', type: 'Capital', population: '553 mil'},
+            {name: 'Manizales', lat: 5.0690, lng: -75.5113, desc: 'Capital de Caldas', region: 'Región Cafetera', type: 'Capital', population: '434 mil'},
+            {name: 'Armenia', lat: 4.5339, lng: -75.6834, desc: 'Capital del Quindío', region: 'Región Cafetera', type: 'Capital', population: '315 mil'},
+            {name: 'Villavicencio', lat: 4.1420, lng: -73.6266, desc: 'Capital del Meta', region: 'Orinoquía', type: 'Capital', population: '531 mil'},
+            {name: 'Pasto', lat: 1.2136, lng: -77.2811, desc: 'Capital de Nariño', region: 'Región Andina', type: 'Capital', population: '450 mil'},
+            {name: 'Neiva', lat: 2.9273, lng: -75.2819, desc: 'Capital del Huila', region: 'Región Andina', type: 'Capital', population: '357 mil'},
+            {name: 'Popayán', lat: 2.4419, lng: -76.6063, desc: 'Capital del Cauca', region: 'Región Andina', type: 'Capital', population: '318 mil'},
+            {name: 'Tunja', lat: 5.5353, lng: -73.3678, desc: 'Capital de Boyacá', region: 'Región Andina', type: 'Capital', population: '203 mil'},
+            {name: 'Montería', lat: 8.7479, lng: -75.8814, desc: 'Capital de Córdoba', region: 'Costa Caribe', type: 'Capital', population: '504 mil'},
+            {name: 'Valledupar', lat: 10.4631, lng: -73.2532, desc: 'Capital del Cesar', region: 'Costa Caribe', type: 'Capital', population: '493 mil'},
+            {name: 'Sincelejo', lat: 9.3047, lng: -75.3978, desc: 'Capital de Sucre', region: 'Costa Caribe', type: 'Capital', population: '281 mil'},
+            {name: 'Riohacha', lat: 11.5444, lng: -72.9072, desc: 'Capital de La Guajira', region: 'Costa Caribe', type: 'Capital', population: '279 mil'},
+            {name: 'Quibdó', lat: 5.6947, lng: -76.6611, desc: 'Capital del Chocó', region: 'Región Pacífica', type: 'Capital', population: '130 mil'},
+            {name: 'Florencia', lat: 1.6144, lng: -75.6062, desc: 'Capital del Caquetá', region: 'Amazonía', type: 'Capital', population: '185 mil'},
+            {name: 'Yopal', lat: 5.3378, lng: -72.3959, desc: 'Capital de Casanare', region: 'Orinoquía', type: 'Capital', population: '153 mil'},
+            {name: 'Arauca', lat: 7.0833, lng: -70.7575, desc: 'Capital de Arauca', region: 'Orinoquía', type: 'Capital', population: '95 mil'},
+            {name: 'Mocoa', lat: 1.1516, lng: -76.6447, desc: 'Capital del Putumayo', region: 'Amazonía', type: 'Capital', population: '46 mil'},
+            {name: 'San José del Guaviare', lat: 2.5706, lng: -72.6458, desc: 'Capital del Guaviare', region: 'Amazonía', type: 'Capital', population: '57 mil'},
+            {name: 'Leticia', lat: -4.2153, lng: -69.9406, desc: 'Capital del Amazonas', region: 'Amazonía', type: 'Capital', population: '50 mil'},
+            {name: 'Inírida', lat: 3.8653, lng: -67.9239, desc: 'Capital del Guainía', region: 'Amazonía', type: 'Capital', population: '23 mil'},
+            {name: 'Puerto Carreño', lat: 6.1844, lng: -67.4858, desc: 'Capital del Vichada', region: 'Orinoquía', type: 'Capital', population: '16 mil'},
+            {name: 'Mitú', lat: 1.2581, lng: -70.2336, desc: 'Capital del Vaupés', region: 'Amazonía', type: 'Capital', population: '20 mil'},
+            {name: 'San Andrés', lat: 12.5847, lng: -81.7006, desc: 'Capital del Archipiélago', region: 'Región Insular', type: 'Capital', population: '75 mil'},
+            
+            // Ciudades importantes adicionales
+            {name: 'Soledad', lat: 10.9185, lng: -74.7693, desc: 'Ciudad del Atlántico', region: 'Costa Caribe', type: 'Ciudad', population: '682 mil'},
+            {name: 'Bello', lat: 6.3370, lng: -75.5609, desc: 'Ciudad de Antioquia', region: 'Región Andina', type: 'Ciudad', population: '512 mil'},
+            {name: 'Soacha', lat: 4.5792, lng: -74.2169, desc: 'Ciudad de Cundinamarca', region: 'Región Andina', type: 'Ciudad', population: '750 mil'},
+            {name: 'Palmira', lat: 3.5394, lng: -76.3036, desc: 'Ciudad del Valle del Cauca', region: 'Región Pacífica', type: 'Ciudad', population: '318 mil'},
+            {name: 'Buenaventura', lat: 3.8801, lng: -77.0311, desc: 'Puerto principal del Pacífico', region: 'Región Pacífica', type: 'Puerto', population: '414 mil'},
+            {name: 'Tuluá', lat: 4.0850, lng: -76.1950, desc: 'Ciudad del Valle del Cauca', region: 'Región Pacífica', type: 'Ciudad', population: '221 mil'},
+            {name: 'Zipaquirá', lat: 5.0221, lng: -74.0046, desc: 'Catedral de Sal', region: 'Región Andina', type: 'Ciudad', population: '137 mil'},
+            {name: 'Girardot', lat: 4.3017, lng: -74.8036, desc: 'Ciudad de Cundinamarca', region: 'Región Andina', type: 'Ciudad', population: '138 mil'},
+            {name: 'Apartadó', lat: 7.8814, lng: -76.6256, desc: 'Ciudad de Antioquia - Urabá', region: 'Región Caribe', type: 'Ciudad', population: '195 mil'}
+        ];
+
+        let map;
+        const sidebar = document.getElementById('sidebar');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const closeBtn = document.getElementById('closeBtn');
+
+        // Inicializar mapa centrado solo en Colombia
+        function initMap() {
+            map = L.map('map', {
+                center: [4.5, -74.0],
+                zoom: 6,
+                zoomControl: true,
+                minZoom: 5,
+                maxZoom: 12,
+                maxBounds: [
+                    [-5, -82],  // Suroeste
+                    [14, -65]   // Noreste
+                ],
+                maxBoundsViscosity: 1.0
+            });
+
+            // Agregar capa base estándar
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Agregar marcadores para todas las ubicaciones
+            locations.forEach(location => {
+                const customIcon = L.divIcon({
+                    html: '<div class="custom-marker"></div>',
+                    iconSize: [12, 12],
+                    iconAnchor: [6, 6],
+                    popupAnchor: [0, -10],
+                    className: ''
+                });
+
+                const popupContent = `
+                    <div class="city-popup">
+                        <h3>${location.name}</h3>
+                        <p><strong>Tipo:</strong> ${location.type}</p>
+                        <p><strong>Descripción:</strong> ${location.desc}</p>
+                        <p><strong>Región:</strong> ${location.region}</p>
+                        <p><strong>Población:</strong> ${location.population}</p>
+                        <p><strong>Coordenadas:</strong> ${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}</p>
+                    </div>
+                `;
+
+                const marker = L.marker([location.lat, location.lng], { icon: customIcon })
+                    .bindPopup(popupContent, {
+                        minWidth: 280,
+                        maxWidth: 350,
+                        className: 'custom-popup'
+                    })
+                    .addTo(map);
+
+                // Cerrar sidebar al hacer clic en marcador
+                marker.on('click', () => {
+                    if (!sidebar.classList.contains('hidden')) {
+                        sidebar.classList.add('hidden');
+                        toggleBtn.classList.remove('hidden');
+                    }
+                });
+            });
+        }
+
+        // Controles de sidebar
+        toggleBtn.addEventListener('click', () => {
+            sidebar.classList.remove('hidden');
+            toggleBtn.classList.add('hidden');
+        });
+
+        closeBtn.addEventListener('click', () => {
+            sidebar.classList.add('hidden');
+            toggleBtn.classList.remove('hidden');
+        });
+
+        // Cerrar sidebar al hacer clic en el mapa
+        document.getElementById('map').addEventListener('click', (e) => {
+            if (e.target.id === 'map' && !sidebar.classList.contains('hidden')) {
+                sidebar.classList.add('hidden');
+                toggleBtn.classList.remove('hidden');
+            }
+        });
+
+        // Inicializar cuando se cargue Leaflet
+        if (typeof L !== 'undefined') {
+            initMap();
+        } else {
+            window.addEventListener('load', initMap);
+        }
+    </script>
+</body>
+</html>
