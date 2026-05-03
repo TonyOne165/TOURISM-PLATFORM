@@ -96,13 +96,19 @@ export const sendChatMessage = async (
     }
 
     if (!response || !response.ok) {
-      const errorData = response ? await response.json().catch(() => ({ status: response?.status })) : { error: 'No connection' };
-      console.error('AI Service Error:', errorData);
+      return getOfflineResponse(messages[messages.length - 1]?.content || '', context);
+    }
+
+    // Validar que la respuesta sea JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.error('La respuesta del servidor no es JSON:', contentType);
       return getOfflineResponse(messages[messages.length - 1]?.content || '', context);
     }
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || 'Lo siento, no pude procesar tu solicitud.';
+    console.log('AI Response Success');
 
     // Enrich OpenAI response with cards when relevant
     const lastMsg = messages[messages.length - 1]?.content?.toLowerCase() || '';

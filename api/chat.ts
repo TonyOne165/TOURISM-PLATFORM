@@ -1,45 +1,48 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Solo permitir POST
+  // Manejo de CORS para desarrollo local si fuera necesario
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!OPENAI_API_KEY) {
-    console.error('Missing OPENAI_API_KEY environment variable');
-    return res.status(500).json({ error: 'OpenAI API Key not configured' });
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    console.error('API Key no configurada en Vercel');
+    return res.status(500).json({ error: 'OpenAI API Key no configurada en el servidor' });
   }
 
   try {
-    const { messages, model = 'gpt-3.5-turbo', temperature = 0.7, max_tokens = 500 } = req.body;
+    const { messages, model, temperature, max_tokens } = req.body;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: model || 'gpt-3.5-turbo',
         messages,
-        temperature,
-        max_tokens,
+        temperature: temperature || 0.7,
+        max_tokens: max_tokens || 500,
       }),
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('OpenAI API Error:', response.status, errorData);
-      return res.status(response.status).json(errorData);
+      return res.status(response.status).json(data);
     }
 
-    const data = await response.json();
     return res.status(200).json(data);
-  } catch (error) {
-    console.error('Serverless Function Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+  } catch (error: any) {
+    console.error('Error en Proxy:', error);
+    return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
