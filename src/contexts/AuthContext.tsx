@@ -10,7 +10,7 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
 import type { User } from '../types';
 
@@ -32,6 +32,46 @@ export const AuthContext = createContext<AuthContextValue | undefined>(undefined
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // 📡 Función para actualizar la presencia del usuario
+  const updatePresence = async (uid: string, isOnline: boolean) => {
+    try {
+      const userDocRef = doc(db, 'users', uid);
+      await updateDoc(userDocRef, {
+        isOnline,
+        lastActive: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error updating presence:', error);
+    }
+  };
+
+  // 👀 Escuchar visibilidad de la página para la presencia
+  useEffect(() => {
+    if (!user) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        updatePresence(user.uid, true);
+      } else {
+        updatePresence(user.uid, false);
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      updatePresence(user.uid, false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [user]);
 
   // 🔄 Escucha cambios de sesión (login/logout)
   useEffect(() => {
@@ -64,6 +104,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           await setDoc(userDocRef, newUser);
           setUser({ uid: firebaseUser.uid, ...newUser });
         }
+        
+        // ✅ Marcar como conectado
+        await updatePresence(firebaseUser.uid, true);
       } else {
         setUser(null);
       }
@@ -116,6 +159,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // 🚪 Cerrar sesión
   const signOut = async () => {
     try {
+      if (auth.currentUser) {
+        await updatePresence(auth.currentUser.uid, false);
+      }
       await firebaseSignOut(auth);
     } catch (error) {
       console.error('Error signing out:', error);

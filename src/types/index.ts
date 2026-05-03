@@ -12,6 +12,8 @@ export interface User {
   preferences?: UserPreferences;
   stats?: UserStats;
   loyaltyPoints?: number;
+  isOnline?: boolean;
+  lastActive?: Timestamp;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
