@@ -43,10 +43,6 @@ export const sendChatMessage = async (
   messages: ChatMessage[],
   context?: AIContext
 ): Promise<AIResponse> => {
-  if (!OPENAI_API_KEY) {
-    return getOfflineResponse(messages[messages.length - 1]?.content || '', context);
-  }
-
   try {
     let contextMessage = '';
     if (context?.tours?.length) {
@@ -60,30 +56,51 @@ export const sendChatMessage = async (
       ).join('\n');
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT + contextMessage },
-          ...messages.map(m => ({
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-          })),
-        ],
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
-    });
+    const payload = {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT + contextMessage },
+        ...messages.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })),
+      ],
+      max_tokens: 500,
+      temperature: 0.7,
+    };
 
-    if (!response.ok) {
-      console.error('OpenAI API error:', response.status, response.statusText);
+    let response;
+    
+    // 1. Intentar usar el proxy seguro (/api/chat)
+    try {
+      response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      console.warn('Proxy /api/chat no disponible o falló:', err);
+    }
+
+    // 2. Fallback: Si el proxy falló y hay API Key directa (desarrollo local)
+    if ((!response || !response.ok) && OPENAI_API_KEY) {
+      console.log('Usando llamada directa a OpenAI (solo para desarrollo local)');
+      response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify(payload),
+      });
+    }
+
+    if (!response || !response.ok) {
+      const errorData = response ? await response.json().catch(() => ({ status: response?.status })) : { error: 'No connection' };
+      console.error('AI Service Error:', errorData);
       return getOfflineResponse(messages[messages.length - 1]?.content || '', context);
     }
+
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || 'Lo siento, no pude procesar tu solicitud.';
 
@@ -95,7 +112,8 @@ export const sendChatMessage = async (
       text,
       ...enrichment,
     };
-  } catch {
+  } catch (error) {
+    console.error('AI Service Critical Error:', error);
     return getOfflineResponse(messages[messages.length - 1]?.content || '', context);
   }
 };
