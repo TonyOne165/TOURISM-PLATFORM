@@ -123,7 +123,7 @@ export const AdminUsers = () => {
                   <tr key={u.uid}>
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="avatar placeholder">
+                        <div className={`avatar placeholder ${u.isOnline ? 'online' : 'offline'}`}>
                           <div className="bg-neutral text-neutral-content rounded-full w-10">
                             {u.photoURL ? (
                               <img src={u.photoURL} alt={u.displayName || ''} />
