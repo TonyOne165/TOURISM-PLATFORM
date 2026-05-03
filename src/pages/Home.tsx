@@ -105,9 +105,9 @@ export const Home: React.FC = () => {
                   alt={item.title}
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-black/90 to-transparent p-3 text-left">
-                  <p className="text-sm font-semibold">{item.title}</p>
-                  {item.subtitle && <p className="text-xs opacity-80">{item.subtitle}</p>}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-black/95 via-brand-black/40 to-transparent p-3 text-left">
+                  <p className="text-sm font-bold text-white drop-shadow-md">{item.title}</p>
+                  {item.subtitle && <p className="text-xs text-white/90 drop-shadow-sm">{item.subtitle}</p>}
                 </div>
               </div>
             ))}
