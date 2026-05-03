@@ -71,7 +71,7 @@ export const AdminLayout = () => {
         )}
 
         {/* Main content */}
-        <main className="flex-1 p-4 lg:p-8 min-h-[calc(100vh-4rem)]">
+        <main className="flex-1 p-4 lg:p-8 min-h-[calc(100vh-4rem)] min-w-0 w-full overflow-x-hidden">
           <Outlet />
         </main>
       </div>
