@@ -79,7 +79,7 @@ export const UserLayout = () => {
           <div className="fixed inset-0 bg-brand-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
         )}
 
-        <main className="flex-1 p-4 lg:p-8 min-h-[calc(100vh-4rem)]">
+        <main className="flex-1 p-4 lg:p-8 min-h-[calc(100vh-4rem)] min-w-0 w-full overflow-x-hidden">
           <Outlet />
         </main>
       </div>

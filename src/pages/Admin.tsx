@@ -94,12 +94,12 @@ export const Admin: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-base-200 pt-16">
-      <div className="container mx-auto px-6 py-8">
-        <div className="flex justify-between items-center mb-8">
+    <div className="min-h-screen bg-base-200 pt-16 overflow-x-hidden">
+      <div className="container mx-auto px-4 sm:px-6 py-8 min-w-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-4xl font-bold">Admin Panel</h1>
-            <p className="text-lg text-gray-600">Manage tours and bookings</p>
+            <h1 className="text-3xl sm:text-4xl font-bold">Admin Panel</h1>
+            <p className="text-base sm:text-lg text-gray-600">Manage tours and bookings</p>
           </div>
           <button
             className="btn btn-primary"
