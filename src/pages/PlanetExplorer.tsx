@@ -562,6 +562,22 @@ const PLACE_RADIUS = 7;
 const ROTATION_SPEED = 0.003;
 const DRAG_SENSITIVITY = 0.005;
 
+// Type-specific colors for tourist places
+const TYPE_COLORS: Record<string, string> = {
+  landmark: '#3B82F6',
+  beach: '#06B6D4',
+  museum: '#F59E0B',
+  restaurant: '#EF4444',
+  park: '#10B981',
+  other: '#8B5CF6',
+};
+
+// Generate static stars for space background
+const STARS: { x: number; y: number; r: number; o: number }[] = [];
+for (let i = 0; i < 200; i++) {
+  STARS.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.5 + 0.3, o: Math.random() * 0.6 + 0.15 });
+}
+
 /* ================================================================
    REACT COMPONENT
    ================================================================ */
@@ -580,6 +596,69 @@ const PlanetExplorer: React.FC = () => {
   });
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [showStreetViewPrompt, setShowStreetViewPrompt] = useState<{place: TouristPlaceData, lat: number, lng: number} | null>(null);
+  const geoBordersRef = useRef<number[][][][]>([]); // Array of countries, each with polygons of [lat,lng] coords
+  const geoDataRef = useRef<any>(null); // Store full GeoJSON data
+
+  // Load real country borders from local GeoJSON
+  useEffect(() => {
+    // Try to load from wolrd.json.txt first (user's custom file), fallback to world.geo.json
+    const loadGeoData = async () => {
+      let geojson: any = null;
+
+      // Try user's custom file first
+      try {
+        const response = await fetch('/src/pages/user/wolrd.json.txt');
+        if (response.ok) {
+          const text = await response.text();
+          geojson = JSON.parse(text);
+          console.log('Loaded country borders from wolrd.json.txt');
+        }
+      } catch (err) {
+        console.log('wolrd.json.txt not found, trying world.geo.json...');
+      }
+
+      // Fallback to world.geo.json if user file failed
+      if (!geojson) {
+        try {
+          const response = await fetch('/world.geo.json');
+          if (response.ok) {
+            geojson = await response.json();
+            console.log('Loaded country borders from world.geo.json');
+          }
+        } catch (err) {
+          console.warn('Could not load country borders:', err);
+          return;
+        }
+      }
+
+      // Process GeoJSON into format for rendering borders
+      const countries: number[][][][] = [];
+      geoDataRef.current = geojson; // Store for potential later use
+
+      for (const feature of geojson.features) {
+        const polys: number[][][] = [];
+        const geo = feature.geometry;
+        // GeoJSON uses [lng, lat], we need [lat, lng]
+        if (geo.type === 'Polygon') {
+          for (const ring of (geo.coordinates as number[][][])) {
+            const coords = ring.map(([lng, lat]) => [lat, lng]);
+            if (coords.length > 2) polys.push(coords);
+          }
+        } else if (geo.type === 'MultiPolygon') {
+          for (const polygon of (geo.coordinates as number[][][][])) {
+            for (const ring of polygon) {
+              const coords = ring.map(([lng, lat]) => [lat, lng]);
+              if (coords.length > 2) polys.push(coords);
+            }
+          }
+        }
+        if (polys.length > 0) countries.push(polys);
+      }
+      geoBordersRef.current = countries;
+    };
+
+    loadGeoData();
+  }, []);
 
   // mutable animation state kept in refs to avoid re-renders
   const stateRef = useRef({
@@ -602,6 +681,8 @@ const PlanetExplorer: React.FC = () => {
     zoomedOut: false,
     zoomAnimationComplete: false, // Track when zoom animation finishes
     hoverRadiusMap: new Map<string, number>(),
+    searchMarkers: [] as { lat: number; lng: number; name: string; displayName: string }[],
+    searchMarkerPulse: 0,
     centerX: 500,
     centerY: 400,
     radius: 360,
@@ -662,23 +743,26 @@ const PlanetExplorer: React.FC = () => {
 
   const resetZoom = () => {
     const st = stateRef.current;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    const w = container?.clientWidth || canvas?.width || 1000;
+    const h = container?.clientHeight || canvas?.height || 800;
+    const realCenterX = w / 2;
+    const realCenterY = h / 2;
+    const baseRadius = Math.min(w, h) * 0.42;
+
     st.zooming = true;
     st.zoomProgress = 0;
     st.zoomAnimationComplete = false;
     st.zoomStartRadius = st.radius;
-    st.zoomEndRadius = Math.min(st.centerX, st.centerY) * 0.42;
+    st.zoomEndRadius = baseRadius;
     st.zoomStartCenter = { x: st.centerX, y: st.centerY };
-    st.zoomEndCenter = { x: st.centerX, y: st.centerY };
+    st.zoomEndCenter = { x: realCenterX, y: realCenterY };
     st.zoomStartRotation = st.rotation;
     st.zoomStartRotationY = st.rotationY;
-    st.zoomEndRotation = 0;
+    st.zoomEndRotation = st.rotation; // Keep current rotation angle
     st.zoomEndRotationY = 0;
-    setTimeout(() => {
-      st.zooming = false;
-      st.zoomedOut = false;
-      st.zoomProgress = 0;
-      st.zoomTarget = null;
-    }, 1000);
+    st.zoomTarget = { lat: 0, lng: 0, name: 'globe' };
   };
 
   /* ---- search handler ---- */
@@ -741,9 +825,17 @@ const PlanetExplorer: React.FC = () => {
     setSearchAnswer('Buscando ubicación...');
     const coords = await getCoordinatesFromNominatim(query);
     if (coords) {
-      setSearchAnswer(`Abriendo Street View de: ${coords.displayName}...`);
-      const url = generateGoogleMapsStreetViewUrl(coords.lat, coords.lng);
-      setTimeout(() => { window.open(url, '_blank'); }, 800);
+      // Add as search marker and rotate globe toward it
+      st.searchMarkers = [{ lat: coords.lat, lng: coords.lng, name: query, displayName: coords.displayName }];
+      st.searchMarkerPulse = 0;
+      st.currentLevel = 'globe';
+      st.selectedCountry = null;
+      st.selectedCity = null;
+      st.selectedPlace = null;
+      setInteractionState({ level: 'globe', countryName: null, cityName: null, placeName: null });
+      setBreadcrumbs([]);
+      zoomToLocation(coords.lat, coords.lng, coords.displayName, 'country');
+      setSearchAnswer(`📍 ${coords.displayName}`);
     } else {
       setSearchAnswer('No encontramos ese lugar. Intenta con otro nombre.');
     }
@@ -758,11 +850,18 @@ const PlanetExplorer: React.FC = () => {
     st.zoomTarget = { lat, lng, name };
     st.zoomAnimationComplete = false; // Reset completion flag
 
-    // Different zoom levels based on target
+    // Use initial radius as baseline to ensure consistent zoom levels
+    // This is set once on canvas resize and represents the base size
+    const initialRadius = Math.min(st.centerX * 2, st.centerY * 2) * 0.42;
+
+    // Zoom factors: multiplier of initial radius
+    // Country: zoom to show the whole country (3-4x base)
+    // City: zoom to show city with spread out points (15-20x base)
+    // Place: zoom very close to show the specific place (35-40x base)
     const zoomFactors = {
-      country: { endRadius: Math.max(st.centerX, st.centerY) * 0.45 },
-      city: { endRadius: Math.max(st.centerX, st.centerY) * 0.30 },
-      place: { endRadius: Math.max(st.centerX, st.centerY) * 0.20 },
+      country: { endRadius: initialRadius * 3.5 },
+      city: { endRadius: initialRadius * 18 },
+      place: { endRadius: initialRadius * 40 },
     };
 
     const factor = zoomFactors[level];
@@ -772,9 +871,13 @@ const PlanetExplorer: React.FC = () => {
     st.zoomEndCenter = { x: st.centerX, y: st.centerY }; // Keep center - we rotate instead
     st.zoomStartRotation = st.rotation;
     st.zoomStartRotationY = st.rotationY;
-    // Calculate rotation to center the target
-    st.zoomEndRotation = -spherical.theta + Math.PI / 2;
-    st.zoomEndRotationY = 0;
+
+    // Calculate rotation to center the target on screen
+    // To center a point at (theta, phi), we need to:
+    // 1. Rotate around Y-axis by -theta to bring it to the front plane
+    // 2. Rotate around X-axis by -phi to bring it to the center vertically
+    st.zoomEndRotation = -spherical.theta;
+    st.zoomEndRotationY = -spherical.phi + Math.PI / 2;
   };
 
   /* ---- street view handler ---- */
@@ -821,6 +924,7 @@ const PlanetExplorer: React.FC = () => {
     };
 
     const onPointerMove = (e: MouseEvent | TouchEvent) => {
+      if ('touches' in e) e.preventDefault();
       const st = stateRef.current;
       const pos = getMousePos(e);
 
@@ -968,8 +1072,8 @@ const PlanetExplorer: React.FC = () => {
     canvas.addEventListener('click', onClick);
 
     // Touch support
-    canvas.addEventListener('touchstart', onPointerDown);
-    canvas.addEventListener('touchmove', onPointerMove);
+    canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+    canvas.addEventListener('touchmove', onPointerMove, { passive: false });
     canvas.addEventListener('touchend', onPointerUp);
 
     /* draw loop */
@@ -1013,8 +1117,14 @@ const PlanetExplorer: React.FC = () => {
         if (st.zoomProgress >= 1) {
           st.zooming = false;
           st.zoomedOut = true;
-          st.zoomAnimationComplete = true; // Mark zoom as complete
+          st.zoomAnimationComplete = true;
           st.zoomProgress = 0;
+          // Persist the final zoomed values so they don't snap back
+          st.radius = st.zoomEndRadius;
+          st.rotation = st.zoomEndRotation;
+          st.rotationY = st.zoomEndRotationY;
+          st.centerX = st.zoomEndCenter.x;
+          st.centerY = st.zoomEndCenter.y;
         }
       } else if (!st.zoomedOut && st.currentLevel === 'globe' && !st.isDragging) {
         st.rotation += ROTATION_SPEED;
@@ -1023,54 +1133,73 @@ const PlanetExplorer: React.FC = () => {
 
       ctx!.clearRect(0, 0, w, h);
 
-      // Draw globe background (subtle circle)
+      // Draw star background
+      for (const star of STARS) {
+        ctx!.beginPath();
+        ctx!.arc(star.x * w, star.y * h, star.r, 0, Math.PI * 2);
+        ctx!.fillStyle = `rgba(255, 255, 255, ${star.o})`;
+        ctx!.fill();
+      }
+
+      // Globe atmospheric glow
+      const glowGrad = ctx!.createRadialGradient(curCX, curCY, curRadius * 0.85, curCX, curCY, curRadius * 1.25);
+      glowGrad.addColorStop(0, 'rgba(59, 130, 246, 0.06)');
+      glowGrad.addColorStop(0.5, 'rgba(59, 130, 246, 0.03)');
+      glowGrad.addColorStop(1, 'transparent');
+      ctx!.fillStyle = glowGrad;
+      ctx!.fillRect(0, 0, w, h);
+
+      // Draw globe background (gradient sphere)
       ctx!.beginPath();
       ctx!.arc(curCX, curCY, curRadius, 0, Math.PI * 2);
-      ctx!.strokeStyle = 'rgba(197, 197, 197, 0.1)';
-      ctx!.lineWidth = 1;
+      const globeGrad = ctx!.createRadialGradient(curCX - curRadius * 0.3, curCY - curRadius * 0.3, 0, curCX, curCY, curRadius);
+      globeGrad.addColorStop(0, 'rgba(40, 50, 70, 0.12)');
+      globeGrad.addColorStop(1, 'rgba(15, 20, 30, 0.08)');
+      ctx!.fillStyle = globeGrad;
+      ctx!.fill();
+      ctx!.strokeStyle = 'rgba(100, 150, 255, 0.12)';
+      ctx!.lineWidth = 1.5;
       ctx!.stroke();
 
-      // Draw country borders (only for globe level or selected country)
-      ctx!.strokeStyle = COLOR;
-      ctx!.globalAlpha = 0.3;
-      ctx!.lineWidth = 0.8;
+      // Draw country borders from real GeoJSON data
+      // Adjust alpha based on zoom level - more visible when zoomed in
+      const borders = geoBordersRef.current;
+      if (borders.length > 0) {
+        ctx!.strokeStyle = COLOR;
 
-      if (st.currentLevel === 'globe') {
-        // Draw all country borders
-        for (const country of allCountries) {
-          if (country.borders) {
+        // Calculate alpha based on current radius (zoom level)
+        // At base radius: 0.25 alpha, at 3x radius: 0.5 alpha
+        const zoomRatio = curRadius / (Math.min(st.centerX * 2, st.centerY * 2) * 0.42);
+        let borderAlpha = Math.min(0.5, 0.25 + (zoomRatio - 1) * 0.1);
+        if (st.currentLevel === 'country') borderAlpha = 0.6; // More visible at country level
+        if (st.currentLevel === 'city') borderAlpha = 0.2;   // Less visible at city level (distracting)
+
+        ctx!.globalAlpha = borderAlpha;
+        ctx!.lineWidth = 0.7;
+        for (const country of borders) {
+          for (const polygon of country) {
             ctx!.beginPath();
             let first = true;
-            const pts = country.borders.map(([lat, lng]) => {
+            let visCount = 0;
+            const pts = polygon.map(([lat, lng]) => {
               const s = geoToSpherical(lat, lng);
-              return sphereTo2D(s.theta, s.phi, curRot, curCX, curCY, curRadius);
+              const p = sphereTo2D(s.theta, s.phi, curRot, curCX, curCY, curRadius);
+              if (p.visible) visCount++;
+              return p;
             });
-            const vis = pts.filter(p => p.visible).length;
-            if (vis > pts.length * 0.3) {
+            if (visCount > pts.length * 0.2) {
               for (const p of pts) {
-                if (p.visible) { if (first) { ctx!.moveTo(p.x, p.y); first = false; } else ctx!.lineTo(p.x, p.y); }
-                else first = true;
+                if (p.visible) {
+                  if (first) { ctx!.moveTo(p.x, p.y); first = false; }
+                  else ctx!.lineTo(p.x, p.y);
+                } else {
+                  first = true;
+                }
               }
               ctx!.stroke();
             }
           }
         }
-      } else if (st.currentLevel === 'country' && st.selectedCountry?.borders) {
-        // Highlight selected country border
-        ctx!.beginPath();
-        let first = true;
-        const pts = st.selectedCountry.borders.map(([lat, lng]) => {
-          const s = geoToSpherical(lat, lng);
-          return sphereTo2D(s.theta, s.phi, curRot, curCX, curCY, curRadius);
-        });
-        for (const p of pts) {
-          if (p.visible) { if (first) { ctx!.moveTo(p.x, p.y); first = false; } else ctx!.lineTo(p.x, p.y); }
-          else first = true;
-        }
-        ctx!.strokeStyle = HIGHLIGHT_COLOR;
-        ctx!.globalAlpha = 0.6;
-        ctx!.lineWidth = 1.5;
-        ctx!.stroke();
       }
 
       ctx!.globalAlpha = 1;
@@ -1126,59 +1255,201 @@ const PlanetExplorer: React.FC = () => {
           const p = sphereTo2D(spherical.theta, spherical.phi, curRot, curCX, curCY, curRadius);
           if (p.visible) {
             const r = st.hoverRadiusMap.get(country.name) || BASE_RADIUS;
+            const isHovered = st.hoveredCountry === country.name;
+
+            if (isHovered) {
+              ctx!.beginPath();
+              ctx!.arc(p.x, p.y, r + 4, 0, Math.PI * 2);
+              ctx!.fillStyle = 'rgba(59, 130, 246, 0.2)';
+              ctx!.fill();
+            }
+
             ctx!.beginPath();
             ctx!.arc(p.x, p.y, r, 0, Math.PI * 2);
-            ctx!.fillStyle = st.hoveredCountry === country.name ? HIGHLIGHT_COLOR : COLOR;
+            ctx!.fillStyle = isHovered ? HIGHLIGHT_COLOR : COLOR;
             ctx!.fill();
+            ctx!.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx!.lineWidth = 1;
+            ctx!.stroke();
 
-            // Label
-            ctx!.font = '12px Arial';
-            ctx!.fillText(country.name, p.x + 8, p.y - 8);
+            if (isHovered) {
+              const text = country.name;
+              ctx!.font = "bold 13px 'Inter', sans-serif";
+              const tw = ctx!.measureText(text).width;
+              const tx = p.x + 14;
+              const ty = p.y - 14;
+              const pad = 6;
+              ctx!.fillStyle = 'rgba(20, 25, 35, 0.9)';
+              ctx!.beginPath();
+              ctx!.roundRect(tx - pad, ty - 14 - pad, tw + pad * 2, 18 + pad * 2, 8);
+              ctx!.fill();
+              ctx!.strokeStyle = 'rgba(100, 150, 255, 0.3)';
+              ctx!.lineWidth = 1;
+              ctx!.stroke();
+              ctx!.fillStyle = '#fff';
+              ctx!.fillText(text, tx, ty);
+            } else {
+              ctx!.font = "12px 'Inter', sans-serif";
+              ctx!.fillStyle = 'rgba(197, 197, 197, 0.7)';
+              ctx!.fillText(country.name, p.x + 8, p.y - 8);
+            }
           }
         }
       }
 
       // Only draw cities if we're at country level AND zoom animation is complete
       if (st.currentLevel === 'country' && st.selectedCountry && st.zoomAnimationComplete) {
-        // Draw cities
         for (const city of st.selectedCountry.cities) {
           const spherical = geoToSpherical(city.lat, city.lng);
           const p = sphereTo2D(spherical.theta, spherical.phi, curRot, curCX, curCY, curRadius);
           if (p.visible) {
             const r = st.hoverRadiusMap.get(city.name) || CITY_RADIUS;
+            const isHovered = st.hoveredCity === city.name;
+
+            if (isHovered) {
+              ctx!.beginPath();
+              ctx!.arc(p.x, p.y, r + 5, 0, Math.PI * 2);
+              ctx!.fillStyle = 'rgba(59, 130, 246, 0.2)';
+              ctx!.fill();
+            }
+
             ctx!.beginPath();
             ctx!.arc(p.x, p.y, r, 0, Math.PI * 2);
-            ctx!.fillStyle = st.hoveredCity === city.name ? HIGHLIGHT_COLOR : COLOR;
+            ctx!.fillStyle = isHovered ? HIGHLIGHT_COLOR : '#60A5FA';
             ctx!.fill();
+            ctx!.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx!.lineWidth = 1.2;
+            ctx!.stroke();
 
-            // Label
-            ctx!.font = '14px Arial';
-            ctx!.fillText(city.name, p.x + 8, p.y - 8);
+            if (isHovered) {
+              const text = `🏙️ ${city.name}`;
+              ctx!.font = "bold 14px 'Inter', sans-serif";
+              const tw = ctx!.measureText(text).width;
+              const tx = p.x + 14;
+              const ty = p.y - 14;
+              const pad = 6;
+              ctx!.fillStyle = 'rgba(20, 25, 35, 0.9)';
+              ctx!.beginPath();
+              ctx!.roundRect(tx - pad, ty - 14 - pad, tw + pad * 2, 18 + pad * 2, 8);
+              ctx!.fill();
+              ctx!.strokeStyle = 'rgba(96, 165, 250, 0.4)';
+              ctx!.lineWidth = 1;
+              ctx!.stroke();
+              ctx!.fillStyle = '#fff';
+              ctx!.fillText(text, tx, ty);
+            } else {
+              ctx!.font = "13px 'Inter', sans-serif";
+              ctx!.fillStyle = 'rgba(197, 197, 197, 0.8)';
+              ctx!.fillText(city.name, p.x + 8, p.y - 8);
+            }
           }
         }
       }
 
       // Only draw tourist places if we're at city level AND zoom animation is complete
       if (st.currentLevel === 'city' && st.selectedCity && st.zoomAnimationComplete) {
-        // Draw tourist places
-        for (const place of st.selectedCity.touristPlaces) {
-          const spherical = geoToSpherical(place.lat, place.lng);
+        // Sort places by z-coordinate (depth) so we draw in correct order
+        const placesWithDepth = st.selectedCity.touristPlaces
+          .map(place => {
+            const spherical = geoToSpherical(place.lat, place.lng);
+            const p = sphereTo2D(spherical.theta, spherical.phi, curRot, curCX, curCY, curRadius);
+            return { place, p, z: p.z };
+          })
+          .filter(item => item.p.visible)
+          .sort((a, b) => a.z - b.z); // Sort far to near (painter's algorithm)
+
+        for (const { place, p } of placesWithDepth) {
+          const r = st.hoverRadiusMap.get(place.name) || PLACE_RADIUS;
+          const isHovered = st.hoveredPlace?.name === place.name;
+          const typeColor = TYPE_COLORS[place.type] || TYPE_COLORS.other;
+
+          if (isHovered) {
+            ctx!.beginPath();
+            ctx!.arc(p.x, p.y, r + 6, 0, Math.PI * 2);
+            ctx!.fillStyle = typeColor + '33';
+            ctx!.fill();
+          }
+
+          ctx!.beginPath();
+          ctx!.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx!.fillStyle = isHovered ? '#fff' : typeColor;
+          ctx!.fill();
+          ctx!.strokeStyle = isHovered ? typeColor : 'rgba(255, 255, 255, 0.4)';
+          ctx!.lineWidth = 1.5;
+          ctx!.stroke();
+
+          const typeIcon = place.type === 'beach' ? '🏖' : place.type === 'museum' ? '🏛' : place.type === 'park' ? '🌳' : place.type === 'restaurant' ? '🍽' : '📍';
+          ctx!.font = '10px sans-serif';
+          ctx!.fillText(typeIcon, p.x - 6, p.y + 4);
+
+          if (isHovered) {
+            const text = place.name;
+            const desc = place.description || '';
+            ctx!.font = "bold 13px 'Inter', sans-serif";
+            const tw = Math.max(ctx!.measureText(text).width, desc ? ctx!.measureText(desc).width * 0.85 : 0);
+            const tx = p.x + 16;
+            const ty = p.y - 20;
+            const boxH = desc ? 40 : 22;
+            const pad = 8;
+            ctx!.fillStyle = 'rgba(20, 25, 35, 0.92)';
+            ctx!.beginPath();
+            ctx!.roundRect(tx - pad, ty - 14 - pad, tw + pad * 2, boxH + pad * 2, 8);
+            ctx!.fill();
+            ctx!.strokeStyle = typeColor + '66';
+            ctx!.lineWidth = 1;
+            ctx!.stroke();
+            ctx!.fillStyle = '#fff';
+            ctx!.fillText(text, tx, ty);
+            if (desc) {
+              ctx!.font = "11px 'Inter', sans-serif";
+              ctx!.fillStyle = 'rgba(197, 197, 197, 0.8)';
+              ctx!.fillText(desc.length > 40 ? desc.slice(0, 40) + '...' : desc, tx, ty + 16);
+            }
+          } else {
+            ctx!.font = "12px 'Inter', sans-serif";
+            ctx!.fillStyle = 'rgba(197, 197, 197, 0.8)';
+            ctx!.fillText(place.name, p.x + 10, p.y - 8);
+          }
+        }
+      }
+
+      // Draw search markers (from Nominatim results)
+      if (st.searchMarkers.length > 0) {
+        st.searchMarkerPulse = (st.searchMarkerPulse + 0.03) % (Math.PI * 2);
+        const pulse = Math.sin(st.searchMarkerPulse) * 0.3 + 0.7;
+        for (const marker of st.searchMarkers) {
+          const spherical = geoToSpherical(marker.lat, marker.lng);
           const p = sphereTo2D(spherical.theta, spherical.phi, curRot, curCX, curCY, curRadius);
           if (p.visible) {
-            const r = st.hoverRadiusMap.get(place.name) || PLACE_RADIUS;
             ctx!.beginPath();
-            ctx!.arc(p.x, p.y, r, 0, Math.PI * 2);
-            ctx!.fillStyle = st.hoveredPlace?.name === place.name ? HIGHLIGHT_COLOR : COLOR;
+            ctx!.arc(p.x, p.y, 16 * pulse, 0, Math.PI * 2);
+            ctx!.strokeStyle = `rgba(239, 68, 68, ${0.4 * pulse})`;
+            ctx!.lineWidth = 2;
+            ctx!.stroke();
+
+            ctx!.beginPath();
+            ctx!.arc(p.x, p.y, 6, 0, Math.PI * 2);
+            ctx!.fillStyle = '#EF4444';
             ctx!.fill();
+            ctx!.strokeStyle = '#fff';
+            ctx!.lineWidth = 2;
+            ctx!.stroke();
 
-            // Type indicator
-            ctx!.font = '10px Arial';
-            const typeIcon = place.type === 'beach' ? '🏖' : place.type === 'museum' ? '🏛' : place.type === 'park' ? '🌳' : '📍';
-            ctx!.fillText(typeIcon, p.x - 6, p.y + 4);
-
-            // Label
-            ctx!.font = '13px Arial';
-            ctx!.fillText(place.name, p.x + 10, p.y - 8);
+            const text = marker.name;
+            ctx!.font = "bold 13px 'Inter', sans-serif";
+            const tw = ctx!.measureText(text).width;
+            const tx = p.x + 14;
+            const ty = p.y - 16;
+            const pad = 6;
+            ctx!.fillStyle = 'rgba(20, 25, 35, 0.9)';
+            ctx!.beginPath();
+            ctx!.roundRect(tx - pad, ty - 14 - pad, tw + pad * 2, 18 + pad * 2, 8);
+            ctx!.fill();
+            ctx!.strokeStyle = 'rgba(239, 68, 68, 0.4)';
+            ctx!.lineWidth = 1;
+            ctx!.stroke();
+            ctx!.fillStyle = '#fff';
+            ctx!.fillText(text, tx, ty);
           }
         }
       }
@@ -1203,7 +1474,7 @@ const PlanetExplorer: React.FC = () => {
   }, [resizeCanvas]);
 
   return (
-    <div className="planet-explorer-root" style={{ position: 'relative', width: '100%', height: 'calc(100vh - 72px)', background: '#181818', overflow: 'hidden' }}>
+    <div className="planet-explorer-root" style={{ position: 'relative', width: '100%', height: 'calc(100vh - 72px)', background: '#0D1117', overflow: 'hidden', fontFamily: "'Inter', sans-serif" }}>
       {/* Canvas container */}
       <div
         ref={containerRef}
@@ -1344,29 +1615,48 @@ const PlanetExplorer: React.FC = () => {
           bottom: 0,
           width: '100%',
           boxSizing: 'border-box',
-          padding: '16px 24px 24px',
+          padding: '12px 12px 16px',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
           zIndex: 10,
+          gap: '6px',
         }}
       >
+        {searchAnswer && (
+          <div style={{
+            fontWeight: '500',
+            color: '#C5C5C5',
+            fontSize: '0.85rem',
+            maxWidth: '600px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            background: 'rgba(20, 25, 35, 0.85)',
+            backdropFilter: 'blur(8px)',
+            padding: '6px 16px',
+            borderRadius: '20px',
+            border: '1px solid rgba(100, 150, 255, 0.15)',
+          }}>
+            {searchAnswer}
+          </div>
+        )}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '12px',
-            background: 'rgba(34, 34, 34, 0.95)',
-            backdropFilter: 'blur(10px)',
+            gap: '8px',
+            background: 'rgba(20, 25, 35, 0.92)',
+            backdropFilter: 'blur(12px)',
             borderRadius: '50px',
-            padding: '14px 28px',
+            padding: '10px 16px',
             width: '100%',
-            maxWidth: '800px',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.3)',
-            border: '1px solid rgba(197, 197, 197, 0.15)',
+            maxWidth: '700px',
+            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
+            border: '1px solid rgba(100, 150, 255, 0.12)',
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" style={{ flexShrink: 0 }}>
             <circle cx="11" cy="11" r="8"/>
             <path d="M21 21l-4.35-4.35"/>
           </svg>
@@ -1375,13 +1665,13 @@ const PlanetExplorer: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-            placeholder="Buscar país, ciudad o lugar turístico (ej: Cartagena, Castillo San Felipe)..."
+            placeholder="Buscar país, ciudad o lugar..."
             style={{
               flex: 1,
-              padding: '4px 8px',
+              padding: '4px 6px',
               background: 'transparent',
               border: 'none',
-              fontSize: '1rem',
+              fontSize: '0.9rem',
               outline: 'none',
               color: '#fff',
               minWidth: 0,
@@ -1390,33 +1680,20 @@ const PlanetExplorer: React.FC = () => {
           <button
             onClick={handleSearch}
             style={{
-              padding: '10px 24px',
-              background: '#007BFF',
+              padding: '8px 20px',
+              background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
               color: '#fff',
               border: 'none',
               borderRadius: '24px',
-              fontSize: '0.95rem',
+              fontSize: '0.85rem',
               fontWeight: 'bold',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             Buscar
           </button>
-          {searchAnswer && (
-            <div style={{
-              marginLeft: '12px',
-              fontWeight: '500',
-              color: '#C5C5C5',
-              whiteSpace: 'nowrap',
-              fontSize: '0.9rem',
-              maxWidth: '300px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}>
-              {searchAnswer}
-            </div>
-          )}
         </div>
       </div>
     </div>
