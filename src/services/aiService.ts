@@ -84,8 +84,8 @@ export const sendChatMessage = async (
 
     // 2. Fallback: Si el proxy falló y hay API Key directa (desarrollo local)
     if ((!response || !response.ok) && OPENAI_API_KEY) {
-      console.log('Usando llamada directa a OpenAI (solo para desarrollo local)');
-      response = await fetch('https://api.openai.com/v1/chat/completions', {
+      console.log('Usando llamada directa a OpenAI a través de proxy local');
+      response = await fetch('/api/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

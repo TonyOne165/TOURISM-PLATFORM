@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
@@ -14,7 +15,14 @@ export default defineConfig({
     host: true,
     allowedHosts: [
       'debora-fadable-melani.ngrok-free.dev'
-    ]
+    ],
+    proxy: {
+      '/api/openai': {
+        target: 'https://api.openai.com',
+        changeOrigin: true,
+        rewrite: (reqPath) => reqPath.replace(/^\/api\/openai/, ''),
+      }
+    }
   },
   test: {
     globals: true,
