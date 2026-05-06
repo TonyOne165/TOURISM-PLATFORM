@@ -5,6 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend,
 } from 'recharts';
+import type { ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
 const COLORS = ['#f59e0b', '#3b82f6', '#ef4444', '#10b981'];
 
@@ -75,14 +76,14 @@ export const AdminDashboard = () => {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statCards.map(card => (
-          <div key={card.label} className={`card ${card.bg} shadow-sm`}>
-            <div className="card-body p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-base-content/60">{card.label}</p>
-                  <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
+          <div key={card.label} className={`card ${card.bg} shadow-sm min-w-0`}>
+            <div className="card-body p-4 min-w-0">
+              <div className="flex items-center justify-between min-w-0 gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-base-content/60 truncate">{card.label}</p>
+                  <p className={`text-2xl font-bold ${card.color} truncate`}>{card.value}</p>
                 </div>
-                <span className="text-3xl">{card.icon}</span>
+                <span className="text-3xl shrink-0">{card.icon}</span>
               </div>
             </div>
           </div>
@@ -102,7 +103,7 @@ export const AdminDashboard = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, 'Ingresos']} />
+                  <Tooltip formatter={(value: ValueType) => [`$${(value as number)?.toLocaleString() ?? 0}`, 'Ingresos']} />
                   <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -144,7 +145,7 @@ export const AdminDashboard = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value: number) => [`$${value.toLocaleString()}`, 'Ingresos']} />
+                  <Tooltip formatter={(value: ValueType) => [`$${(value as number)?.toLocaleString() ?? 0}`, 'Ingresos']} />
                   <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>

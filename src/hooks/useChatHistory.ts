@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import type { ChatMessage, ChatConversation } from '../types';
 
 const HISTORY_KEY = 'tourism_chat_history';
@@ -34,22 +35,44 @@ function generateTitle(messages: ChatMessage[]): string {
 }
 
 export const useChatHistory = () => {
-  const [conversations, setConversations] = useState<ChatConversation[]>(loadConversations);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(loadActiveId);
+  const { currentUser } = useAuth();
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
+  // Initialize state based on authentication
+  useEffect(() => {
+    if (currentUser) {
+      setConversations(loadConversations());
+      setActiveConversationId(loadActiveId());
+    } else {
+      setConversations([]);
+      setActiveConversationId(null);
+      localStorage.removeItem(HISTORY_KEY);
+      localStorage.removeItem(ACTIVE_KEY);
+    }
+  }, [currentUser]);
 
   // Persist conversations
   useEffect(() => {
-    saveConversations(conversations);
-  }, [conversations]);
+    if (currentUser && conversations.length > 0) {
+      saveConversations(conversations);
+    } else if (!currentUser) {
+      localStorage.removeItem(HISTORY_KEY);
+    }
+  }, [conversations, currentUser]);
 
   // Persist active ID
   useEffect(() => {
-    if (activeConversationId) {
-      localStorage.setItem(ACTIVE_KEY, activeConversationId);
+    if (currentUser) {
+      if (activeConversationId) {
+        localStorage.setItem(ACTIVE_KEY, activeConversationId);
+      } else {
+        localStorage.removeItem(ACTIVE_KEY);
+      }
     } else {
       localStorage.removeItem(ACTIVE_KEY);
     }
-  }, [activeConversationId]);
+  }, [activeConversationId, currentUser]);
 
   const createConversation = useCallback((): string => {
     const id = crypto.randomUUID();

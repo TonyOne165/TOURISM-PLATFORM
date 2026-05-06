@@ -62,32 +62,32 @@ export const UserDashboard = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="card bg-base-100 shadow-sm">
-          <div className="card-body p-4 text-center">
-            <span className="text-3xl">🏝️</span>
-            <p className="text-2xl font-bold text-primary">{visited.length}</p>
-            <p className="text-sm text-base-content/60">Destinos Visitados</p>
+        <div className="card bg-base-100 shadow-sm min-w-0">
+          <div className="card-body p-4 text-center min-w-0">
+            <span className="text-3xl shrink-0">🏝️</span>
+            <p className="text-2xl font-bold text-primary truncate">{visited.length}</p>
+            <p className="text-sm text-base-content/60 truncate">Destinos Visitados</p>
           </div>
         </div>
-        <div className="card bg-base-100 shadow-sm">
-          <div className="card-body p-4 text-center">
-            <span className="text-3xl">📋</span>
-            <p className="text-2xl font-bold text-secondary">{bookings.length}</p>
-            <p className="text-sm text-base-content/60">Reservas Totales</p>
+        <div className="card bg-base-100 shadow-sm min-w-0">
+          <div className="card-body p-4 text-center min-w-0">
+            <span className="text-3xl shrink-0">📋</span>
+            <p className="text-2xl font-bold text-secondary truncate">{bookings.length}</p>
+            <p className="text-sm text-base-content/60 truncate">Reservas Totales</p>
           </div>
         </div>
-        <div className="card bg-base-100 shadow-sm">
-          <div className="card-body p-4 text-center">
-            <span className="text-3xl">💰</span>
-            <p className="text-2xl font-bold text-accent">${totalSpent.toLocaleString()}</p>
-            <p className="text-sm text-base-content/60">Total Gastado</p>
+        <div className="card bg-base-100 shadow-sm min-w-0">
+          <div className="card-body p-4 text-center min-w-0">
+            <span className="text-3xl shrink-0">💰</span>
+            <p className="text-2xl font-bold text-accent truncate">${totalSpent.toLocaleString()}</p>
+            <p className="text-sm text-base-content/60 truncate">Total Gastado</p>
           </div>
         </div>
-        <div className="card bg-base-100 shadow-sm">
-          <div className="card-body p-4 text-center">
-            <span className="text-3xl">⭐</span>
-            <p className="text-2xl font-bold">{reviews.length}</p>
-            <p className="text-sm text-base-content/60">Reseñas Escritas</p>
+        <div className="card bg-base-100 shadow-sm min-w-0">
+          <div className="card-body p-4 text-center min-w-0">
+            <span className="text-3xl shrink-0">⭐</span>
+            <p className="text-2xl font-bold truncate">{reviews.length}</p>
+            <p className="text-sm text-base-content/60 truncate">Reseñas Escritas</p>
           </div>
         </div>
       </div>

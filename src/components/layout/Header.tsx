@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
 export const Header: React.FC = () => {
   const { currentUser, userProfile, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -106,55 +107,61 @@ export const Header: React.FC = () => {
             )}
 
             {/* Mobile Menu - Hamburger */}
-            <div className="dropdown dropdown-end md:hidden">
-              <label tabIndex={0} className="btn btn-ghost btn-sm text-brand-cream px-2">
+            <div className="md:hidden relative">
+              <button 
+                className="btn btn-ghost btn-sm text-brand-cream px-2"
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={isMobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
                 </svg>
-              </label>
-              <ul tabIndex={0} className="mt-3 z-[1] p-3 shadow-lg menu menu-sm dropdown-content bg-brand-cream rounded-box w-64 max-h-[80vh] overflow-y-auto">
-                {/* User info in mobile menu */}
-                {currentUser && userProfile && (
-                  <li className="menu-title mb-1">
-                    <div className="flex items-center gap-2">
-                      <div className="avatar placeholder">
-                        <div className="bg-brand-blue text-white rounded-full w-8">
-                          {userProfile?.photoURL ? (
-                            <img src={userProfile.photoURL} alt="" className="w-8 h-8 rounded-full" />
-                          ) : (
-                            <span className="text-xs">{(userProfile?.displayName || userProfile?.email || '?')[0].toUpperCase()}</span>
-                          )}
+              </button>
+              
+              {isMobileMenuOpen && (
+                <ul className="absolute right-0 mt-3 z-[50] p-3 shadow-lg menu menu-sm bg-brand-cream rounded-box w-64 max-h-[80vh] overflow-y-auto">
+                  {/* User info in mobile menu */}
+                  {currentUser && userProfile && (
+                    <li className="menu-title mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="avatar placeholder">
+                          <div className="bg-brand-blue text-white rounded-full w-8">
+                            {userProfile?.photoURL ? (
+                              <img src={userProfile.photoURL} alt="" className="w-8 h-8 rounded-full" />
+                            ) : (
+                              <span className="text-xs">{(userProfile?.displayName || userProfile?.email || '?')[0].toUpperCase()}</span>
+                            )}
+                          </div>
                         </div>
+                        <span className="text-sm text-brand-dark font-semibold">{userProfile?.displayName?.split(' ')[0] || 'Usuario'}</span>
                       </div>
-                      <span className="text-sm text-brand-dark font-semibold">{userProfile?.displayName?.split(' ')[0] || 'Usuario'}</span>
-                    </div>
-                  </li>
-                )}
-                {/* Navigation links */}
-                <li><Link to="/">Inicio</Link></li>
-                <li><Link to="/tours">Tours</Link></li>
-                <li><Link to="/accommodations">Hospedajes</Link></li>
-                <li><Link to="/navegar">Navegar</Link></li>
-                {currentUser && (
-                  <>
-                    <div className="divider my-1"></div>
-                    <li><Link to="/dashboard">Mi Panel</Link></li>
-                    <li><Link to="/dashboard/bookings">Mis Reservas</Link></li>
-                    <li><Link to="/dashboard/cart">Carrito</Link></li>
-                    <li><Link to="/dashboard/profile">Mi Perfil</Link></li>
-                    {isAdmin && <li><Link to="/admin" className="text-brand-blue font-semibold">Administración</Link></li>}
-                    <div className="divider my-1"></div>
-                    <li><button onClick={handleLogout} className="text-error">Cerrar Sesión</button></li>
-                  </>
-                )}
-                {!currentUser && (
-                  <>
-                    <div className="divider my-1"></div>
-                    <li><Link to="/login">Iniciar Sesión</Link></li>
-                    <li><Link to="/register" className="text-brand-blue font-semibold">Registrarse</Link></li>
-                  </>
-                )}
-              </ul>
+                    </li>
+                  )}
+                  {/* Navigation links */}
+                  <li><Link to="/" onClick={() => setIsMobileMenuOpen(false)}>Inicio</Link></li>
+                  <li><Link to="/tours" onClick={() => setIsMobileMenuOpen(false)}>Tours</Link></li>
+                  <li><Link to="/accommodations" onClick={() => setIsMobileMenuOpen(false)}>Hospedajes</Link></li>
+                  <li><Link to="/navegar" onClick={() => setIsMobileMenuOpen(false)}>Navegar</Link></li>
+                  {currentUser && (
+                    <>
+                      <div className="divider my-1"></div>
+                      <li><Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>Mi Panel</Link></li>
+                      <li><Link to="/dashboard/bookings" onClick={() => setIsMobileMenuOpen(false)}>Mis Reservas</Link></li>
+                      <li><Link to="/dashboard/cart" onClick={() => setIsMobileMenuOpen(false)}>Carrito</Link></li>
+                      <li><Link to="/dashboard/profile" onClick={() => setIsMobileMenuOpen(false)}>Mi Perfil</Link></li>
+                      {isAdmin && <li><Link to="/admin" onClick={() => setIsMobileMenuOpen(false)} className="text-brand-blue font-semibold">Administración</Link></li>}
+                      <div className="divider my-1"></div>
+                      <li><button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="text-error">Cerrar Sesión</button></li>
+                    </>
+                  )}
+                  {!currentUser && (
+                    <>
+                      <div className="divider my-1"></div>
+                      <li><Link to="/login" onClick={() => setIsMobileMenuOpen(false)}>Iniciar Sesión</Link></li>
+                      <li><Link to="/register" onClick={() => setIsMobileMenuOpen(false)} className="text-brand-blue font-semibold">Registrarse</Link></li>
+                    </>
+                  )}
+                </ul>
+              )}
             </div>
           </div>
         </div>
