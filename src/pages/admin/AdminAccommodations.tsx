@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAccommodations } from '../../hooks/useAccommodations';
-import { ACCOMMODATION_TYPES, AMENITIES } from '../../utils/constants';
+import { ACCOMMODATION_TYPES, AMENITIES, CITIES } from '../../utils/constants';
+import { useCity } from '../../contexts/CityContext';
 import type { CreateAccommodationInput } from '../../types';
 
 const emptyForm: CreateAccommodationInput = {
@@ -8,10 +9,12 @@ const emptyForm: CreateAccommodationInput = {
   coords: { lat: 10.4236, lng: -75.5366 }, address: '', amenities: [],
   rooms: 1, maxGuests: 2, checkInTime: '14:00', checkOutTime: '12:00',
   featured: false, associatedTourIds: [],
+  city: '',
 };
 
 export const AdminAccommodations = () => {
   const { accommodations, createAccommodation, updateAccommodation, deleteAccommodation, loading } = useAccommodations();
+  const { selectedCity } = useCity();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CreateAccommodationInput>(emptyForm);
@@ -44,6 +47,7 @@ export const AdminAccommodations = () => {
       amenities: acc.amenities, rooms: acc.rooms, maxGuests: acc.maxGuests,
       checkInTime: acc.checkInTime, checkOutTime: acc.checkOutTime,
       featured: acc.featured, associatedTourIds: acc.associatedTourIds,
+      city: acc.city,
     });
     setImageUrls(acc.images?.join(', ') || '');
     setEditingId(id);
@@ -128,6 +132,14 @@ export const AdminAccommodations = () => {
                   <input type="number" step="any" className="input input-bordered" value={form.coords.lng}
                     onChange={e => setForm({ ...form, coords: { ...form.coords, lng: parseFloat(e.target.value) } })} />
                 </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Ciudad *</span></label>
+                  <select className="select select-bordered" value={form.city || selectedCity || ''}
+                    onChange={e => setForm({ ...form, city: e.target.value })} required>
+                    <option value="">Seleccionar</option>
+                    {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="form-control">
                 <label className="label"><span className="label-text">Descripción *</span></label>
@@ -178,7 +190,7 @@ export const AdminAccommodations = () => {
           ) : (
             <div className="overflow-x-auto">
               <table className="table">
-                <thead><tr><th>Imagen</th><th>Nombre</th><th>Tipo</th><th>Precio/Noche</th><th>Rating</th><th>Acciones</th></tr></thead>
+                <thead><tr><th>Imagen</th><th>Nombre</th><th>Tipo</th><th>Precio/Noche</th><th>Ciudad</th><th>Rating</th><th>Acciones</th></tr></thead>
                 <tbody>
                   {filtered.map(acc => (
                     <tr key={acc.id}>
@@ -188,6 +200,7 @@ export const AdminAccommodations = () => {
                       <td><div className="font-medium">{acc.name}</div>{acc.featured && <span className="badge badge-secondary badge-sm">Destacado</span>}</td>
                       <td><span className="badge badge-outline badge-sm">{acc.type}</span></td>
                       <td className="font-semibold">${acc.pricePerNight}/noche</td>
+                      <td>{acc.city && <span className="badge badge-primary badge-sm">{acc.city}</span>}</td>
                       <td>{acc.rating.toFixed(1)} ⭐</td>
                       <td>
                         <div className="flex gap-2">

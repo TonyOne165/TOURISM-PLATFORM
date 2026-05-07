@@ -51,6 +51,7 @@ export const useAccommodations = () => {
       rating: 0,
       reviewCount: 0,
       createdAt: Timestamp.now(),
+      city: input.city,
     };
     const docRef = await addDoc(collection(db, COLLECTIONS.ACCOMMODATIONS), data);
     await fetchAccommodations();

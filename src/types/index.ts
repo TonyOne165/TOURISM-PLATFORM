@@ -258,6 +258,7 @@ export interface CreateTourInput {
   includes?: string[];
   difficulty?: 'easy' | 'moderate' | 'hard';
   meetingPoint?: string;
+  city?: string;
 }
 
 export interface CreateBookingInput {
@@ -290,6 +291,7 @@ export interface CreateAccommodationInput {
   checkOutTime: string;
   featured?: boolean;
   associatedTourIds?: string[];
+  city?: string;
 }
 
 // ============ DASHBOARD STATS ============

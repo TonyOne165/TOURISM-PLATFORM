@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTours } from '../../hooks/useTours';
-import { TOUR_CATEGORIES, DIFFICULTY_LEVELS } from '../../utils/constants';
+import { TOUR_CATEGORIES, DIFFICULTY_LEVELS, CITIES } from '../../utils/constants';
+import { useCity } from '../../contexts/CityContext';
 import type { CreateTourInput } from '../../types';
 
 const emptyForm: CreateTourInput = {
@@ -9,11 +10,13 @@ const emptyForm: CreateTourInput = {
   coords: { lat: 10.4236, lng: -75.5366 },
   duration: '', category: '', featured: false,
   maxParticipants: 20, difficulty: 'easy', meetingPoint: '', includes: [],
+  city: '',
 };
 
 export const AdminTours = () => {
   const { user } = useAuth();
   const { tours, createTour, updateTour, deleteTour, loading } = useTours();
+  const { selectedCity } = useCity();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<CreateTourInput>(emptyForm);
@@ -58,6 +61,7 @@ export const AdminTours = () => {
       coords: tour.coords, duration: tour.duration, category: tour.category,
       featured: tour.featured, maxParticipants: tour.maxParticipants,
       difficulty: tour.difficulty, meetingPoint: tour.meetingPoint, includes: tour.includes,
+      city: tour.city,
     });
     setImageUrls(tour.images?.join(', ') || '');
     setIncludesText(tour.includes?.join(', ') || '');
@@ -141,6 +145,14 @@ export const AdminTours = () => {
                   <input type="text" className="input input-bordered" value={form.meetingPoint || ''}
                     onChange={e => setForm({ ...form, meetingPoint: e.target.value })} />
                 </div>
+                <div className="form-control">
+                  <label className="label"><span className="label-text">Ciudad *</span></label>
+                  <select className="select select-bordered" value={form.city || selectedCity || ''}
+                    onChange={e => setForm({ ...form, city: e.target.value })} required>
+                    <option value="">Seleccionar</option>
+                    {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="form-control">
                 <label className="label"><span className="label-text">Descripción *</span></label>
@@ -190,7 +202,7 @@ export const AdminTours = () => {
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
-                  <tr><th>Imagen</th><th>Título</th><th>Precio</th><th>Duración</th><th>Categoría</th><th>Rating</th><th>Acciones</th></tr>
+                  <tr><th>Imagen</th><th>Título</th><th>Precio</th><th>Duración</th><th>Categoría</th><th>Ciudad</th><th>Rating</th><th>Acciones</th></tr>
                 </thead>
                 <tbody>
                   {filtered.map(tour => (
@@ -207,6 +219,7 @@ export const AdminTours = () => {
                       <td className="font-semibold">${tour.price}</td>
                       <td>{tour.duration}</td>
                       <td><span className="badge badge-outline badge-sm">{tour.category || 'General'}</span></td>
+                      <td>{tour.city && <span className="badge badge-primary badge-sm">{tour.city}</span>}</td>
                       <td>{tour.rating.toFixed(1)} ⭐</td>
                       <td>
                         <div className="flex gap-2">

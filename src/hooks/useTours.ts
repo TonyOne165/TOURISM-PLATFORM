@@ -106,6 +106,7 @@ export const useTours = () => {
         reviews: [],
         createdAt: Timestamp.now(),
         authorId,
+        city: input.city,
       };
 
       const docRef = await addDoc(collection(db, COLLECTIONS.TOURS), tourData);
