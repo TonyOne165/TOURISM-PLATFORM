@@ -515,7 +515,7 @@ function geoToSpherical(lat: number, lng: number): Spherical {
 
 function sphereTo2D(theta: number, phi: number, rotation: number, centerX: number, centerY: number, radius: number): Projected {
   const adj = theta + rotation;
-  const x = Math.sin(phi) * Math.cos(adj);
+  const x = -Math.sin(phi) * Math.cos(adj);
   const y = -Math.cos(phi);
   const z = Math.sin(phi) * Math.sin(adj);
   return { x: centerX + x * radius, y: centerY + y * radius, z, visible: z > -0.2 };
@@ -863,9 +863,9 @@ const PlanetExplorer: React.FC = () => {
 
     // Calculate rotation to center the target on screen
     // To center a point at (theta, phi), we need to:
-    // 1. Rotate around Y-axis by -theta to bring it to the front plane
+    // 1. Rotate around Y-axis to bring it to the center of the screen
     // 2. Rotate around X-axis by -phi to bring it to the center vertically
-    st.zoomEndRotation = -spherical.theta;
+    st.zoomEndRotation = Math.PI / 2 - spherical.theta;
     st.zoomEndRotationY = -spherical.phi + Math.PI / 2;
   };
 
@@ -923,7 +923,7 @@ const PlanetExplorer: React.FC = () => {
         st.dragDeltaX += Math.abs(deltaX);
         st.dragDeltaY += Math.abs(deltaY);
         // Invert rotation direction for natural drag feel
-        st.rotation -= deltaX * DRAG_SENSITIVITY;
+        st.rotation += deltaX * DRAG_SENSITIVITY;
         st.rotationY -= deltaY * DRAG_SENSITIVITY;
         st.rotationY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, st.rotationY));
         st.lastMouseX = pos.x;
@@ -1116,7 +1116,7 @@ const PlanetExplorer: React.FC = () => {
           st.centerY = st.zoomEndCenter.y;
         }
       } else if (!st.zoomedOut && st.currentLevel === 'globe' && !st.isDragging) {
-        st.rotation += ROTATION_SPEED;
+        st.rotation -= ROTATION_SPEED;
         curRot = st.rotation;
       }
 
