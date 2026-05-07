@@ -39,15 +39,16 @@ export const AdminTours = () => {
     try {
       const images = imageUrls.split(',').map(u => u.trim()).filter(Boolean);
       const includes = includesText.split(',').map(i => i.trim()).filter(Boolean);
-      const data = { ...form, includes };
+      const data = { ...form, includes, city: form.city || selectedCity || '' };
       if (editingId) {
         await updateTour(editingId, { ...data, images });
       } else {
         await createTour(data, user!.uid, images);
       }
       resetForm();
-    } catch {
-      alert('Error al guardar el tour');
+    } catch (err: any) {
+      console.error(err);
+      alert('Error al guardar el tour: ' + (err?.message || 'Error desconocido'));
     } finally {
       setSubmitting(false);
     }

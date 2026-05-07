@@ -29,10 +29,11 @@ export const AdminAccommodations = () => {
     setSubmitting(true);
     try {
       const images = imageUrls.split(',').map(u => u.trim()).filter(Boolean);
+      const data = { ...form, city: form.city || selectedCity || '' };
       if (editingId) {
-        await updateAccommodation(editingId, form, images);
+        await updateAccommodation(editingId, data, images);
       } else {
-        await createAccommodation(form, images);
+        await createAccommodation(data, images);
       }
       resetForm();
     } catch { alert('Error al guardar'); } finally { setSubmitting(false); }

@@ -112,9 +112,9 @@ export const useTours = () => {
       const docRef = await addDoc(collection(db, COLLECTIONS.TOURS), tourData);
       await fetchTours();
       return docRef.id;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating tour:', err);
-      throw new Error('Failed to create tour');
+      throw new Error(err?.message || 'Failed to create tour');
     }
   };
 
