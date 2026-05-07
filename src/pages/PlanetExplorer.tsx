@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import worldGeoUrl from './user/wolrd.json.txt?url';
 
 /* ================================================================
    TYPES
@@ -601,35 +602,23 @@ const PlanetExplorer: React.FC = () => {
 
   // Load real country borders from local GeoJSON
   useEffect(() => {
-    // Try to load from wolrd.json.txt first (user's custom file), fallback to world.geo.json
+    // Load from bundled wolrd.json.txt
     const loadGeoData = async () => {
       let geojson: any = null;
 
-      // Try user's custom file first
       try {
-        const response = await fetch('/src/pages/user/wolrd.json.txt');
+        const response = await fetch(worldGeoUrl);
         if (response.ok) {
           const text = await response.text();
           geojson = JSON.parse(text);
           console.log('Loaded country borders from wolrd.json.txt');
         }
       } catch (err) {
-        console.log('wolrd.json.txt not found, trying world.geo.json...');
+        console.warn('Could not load country borders:', err);
+        return;
       }
 
-      // Fallback to world.geo.json if user file failed
-      if (!geojson) {
-        try {
-          const response = await fetch('/world.geo.json');
-          if (response.ok) {
-            geojson = await response.json();
-            console.log('Loaded country borders from world.geo.json');
-          }
-        } catch (err) {
-          console.warn('Could not load country borders:', err);
-          return;
-        }
-      }
+      if (!geojson) return;
 
       // Process GeoJSON into format for rendering borders
       const countries: number[][][][] = [];
