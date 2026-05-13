@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import worldGeoUrl from './user/wolrd.json.txt?url';
+import { InfoPanel } from '@/components/planet/InfoPanel';
+import { fetchCitiesForCountry, fetchTouristPlaces, COUNTRY_ISO } from '@/services/overpass';
 
 /* ================================================================
    TYPES
@@ -599,6 +601,8 @@ const PlanetExplorer: React.FC = () => {
   const [showStreetViewPrompt, setShowStreetViewPrompt] = useState<{place: TouristPlaceData, lat: number, lng: number} | null>(null);
   const geoBordersRef = useRef<number[][][][]>([]); // Array of countries, each with polygons of [lat,lng] coords
   const geoDataRef = useRef<any>(null); // Store full GeoJSON data
+  const countryBordersByNameRef = useRef<Map<string, number[][][]>>(new Map()); // Country name -> polygons
+  const [dynamicLoading, setDynamicLoading] = useState(false);
 
   // Load real country borders from local GeoJSON
   useEffect(() => {
@@ -624,6 +628,7 @@ const PlanetExplorer: React.FC = () => {
       const countries: number[][][][] = [];
       geoDataRef.current = geojson; // Store for potential later use
 
+      const nameIndex = new Map<string, number[][][]>();
       for (const feature of geojson.features) {
         const polys: number[][][] = [];
         const geo = feature.geometry;
@@ -641,13 +646,75 @@ const PlanetExplorer: React.FC = () => {
             }
           }
         }
-        if (polys.length > 0) countries.push(polys);
+        if (polys.length > 0) {
+          countries.push(polys);
+          const props = feature.properties || {};
+          const cname = props.name || props.NAME || props.ADMIN || props.admin;
+          if (cname) nameIndex.set(cname, polys);
+        }
       }
       geoBordersRef.current = countries;
+      countryBordersByNameRef.current = nameIndex;
     };
 
     loadGeoData();
   }, []);
+
+  /* ---- Dynamic data: fetch cities for selected country via Overpass ---- */
+  useEffect(() => {
+    const st = stateRef.current;
+    const country = st.selectedCountry;
+    if (!country || interactionState.level !== 'country') return;
+    if (!COUNTRY_ISO[country.name]) return; // no ISO mapping -> skip
+    // Avoid refetching if cities were already enriched (heuristic: more than hardcoded)
+    if (country.cities.length > 12) return;
+
+    let cancelled = false;
+    setDynamicLoading(true);
+    fetchCitiesForCountry(country.name)
+      .then(cities => {
+        if (cancelled || cities.length === 0) return;
+        const existingNames = new Set(country.cities.map(c => c.name.toLowerCase()));
+        const merged = [
+          ...country.cities,
+          ...cities
+            .filter(c => !existingNames.has(c.name.toLowerCase()))
+            .slice(0, 30)
+            .map(c => ({
+              name: c.name,
+              lat: c.lat,
+              lng: c.lng,
+              touristPlaces: [],
+            })),
+        ];
+        // Mutate the selected country in-place so the draw loop picks it up
+        country.cities = merged;
+      })
+      .finally(() => {
+        if (!cancelled) setDynamicLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [interactionState.level, interactionState.countryName]);
+
+  /* ---- Dynamic data: fetch tourist places for selected city via Overpass ---- */
+  useEffect(() => {
+    const st = stateRef.current;
+    const city = st.selectedCity;
+    if (!city || interactionState.level !== 'city') return;
+    if (city.touristPlaces.length > 0) return; // already populated (hardcoded)
+
+    let cancelled = false;
+    setDynamicLoading(true);
+    fetchTouristPlaces(city.lat, city.lng, 15000)
+      .then(places => {
+        if (cancelled || places.length === 0) return;
+        city.touristPlaces = places.slice(0, 25);
+      })
+      .finally(() => {
+        if (!cancelled) setDynamicLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [interactionState.level, interactionState.cityName]);
 
   // mutable animation state kept in refs to avoid re-renders
   const stateRef = useRef({
@@ -686,6 +753,14 @@ const PlanetExplorer: React.FC = () => {
     selectedCountry: null as CountryData | null,
     selectedCity: null as CityData | null,
     selectedPlace: null as TouristPlaceData | null,
+    // Camera history stack — each entry is the state we want to RETURN TO when going back
+    cameraStack: [] as Array<{
+      radius: number; rotation: number; rotationY: number;
+      centerX: number; centerY: number;
+      level: 'globe' | 'country' | 'city' | 'place';
+      country: CountryData | null; city: CityData | null;
+      breadcrumbs: BreadcrumbItem[];
+    }>,
   });
 
   /* ---- resize canvas to fill container ---- */
@@ -704,55 +779,66 @@ const PlanetExplorer: React.FC = () => {
   }, []);
 
   /* ---- navigation helpers ---- */
-  const goBack = useCallback(() => {
+  const pushCameraSnapshot = useCallback((bc: BreadcrumbItem[]) => {
     const st = stateRef.current;
-    if (st.currentLevel === 'place') {
-      // Back to city
-      st.currentLevel = 'city';
-      st.selectedPlace = null;
-      setInteractionState({ level: 'city', countryName: st.selectedCountry?.name || null, cityName: st.selectedCity?.name || null, placeName: null });
-      setBreadcrumbs(prev => prev.slice(0, -1));
-      resetZoom();
-    } else if (st.currentLevel === 'city') {
-      // Back to country
-      st.currentLevel = 'country';
-      st.selectedCity = null;
-      setInteractionState({ level: 'country', countryName: st.selectedCountry?.name || null, cityName: null, placeName: null });
-      setBreadcrumbs(prev => prev.slice(0, -1));
-      resetZoom();
-    } else if (st.currentLevel === 'country') {
-      // Back to globe
-      st.currentLevel = 'globe';
-      st.selectedCountry = null;
-      setInteractionState({ level: 'globe', countryName: null, cityName: null, placeName: null });
-      setBreadcrumbs([]);
-      resetZoom();
-    }
+    st.cameraStack.push({
+      radius: st.radius,
+      rotation: st.rotation,
+      rotationY: st.rotationY,
+      centerX: st.centerX,
+      centerY: st.centerY,
+      level: st.currentLevel,
+      country: st.selectedCountry,
+      city: st.selectedCity,
+      breadcrumbs: bc,
+    });
   }, []);
 
-  const resetZoom = () => {
+  const goBack = useCallback(() => {
     const st = stateRef.current;
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    const w = container?.clientWidth || canvas?.width || 1000;
-    const h = container?.clientHeight || canvas?.height || 800;
-    const realCenterX = w / 2;
-    const realCenterY = h / 2;
-    const baseRadius = Math.min(w, h) * 0.42;
+    const snap = st.cameraStack.pop();
+    if (!snap) return;
 
+    // Restore logical state synchronously
+    st.currentLevel = snap.level;
+    st.selectedCountry = snap.country;
+    st.selectedCity = snap.city;
+    st.selectedPlace = null;
+
+    // Reset hover state to avoid stale tooltips
+    st.hoveredCountry = null;
+    st.hoveredCity = null;
+    st.hoveredPlace = null;
+    st.searchMarkers = [];
+
+    // Animate camera to previous snapshot
     st.zooming = true;
     st.zoomProgress = 0;
     st.zoomAnimationComplete = false;
     st.zoomStartRadius = st.radius;
-    st.zoomEndRadius = baseRadius;
+    st.zoomEndRadius = snap.radius;
     st.zoomStartCenter = { x: st.centerX, y: st.centerY };
-    st.zoomEndCenter = { x: realCenterX, y: realCenterY };
+    st.zoomEndCenter = { x: snap.centerX, y: snap.centerY };
     st.zoomStartRotation = st.rotation;
     st.zoomStartRotationY = st.rotationY;
-    st.zoomEndRotation = st.rotation; // Keep current rotation angle
-    st.zoomEndRotationY = 0;
-    st.zoomTarget = { lat: 0, lng: 0, name: 'globe' };
-  };
+    st.zoomEndRotation = snap.rotation;
+    st.zoomEndRotationY = snap.rotationY;
+    st.zoomTarget = { lat: 0, lng: 0, name: snap.level };
+
+    // CRITICAL: when returning to globe, allow auto-rotation to resume
+    if (snap.level === 'globe') {
+      st.zoomedOut = false;
+    }
+
+    setInteractionState({
+      level: snap.level,
+      countryName: snap.country?.name ?? null,
+      cityName: snap.city?.name ?? null,
+      placeName: null,
+    });
+    setBreadcrumbs(snap.breadcrumbs);
+    setShowStreetViewPrompt(null);
+  }, []);
 
   /* ---- search handler ---- */
   const handleSearch = useCallback(async () => {
@@ -767,7 +853,8 @@ const PlanetExplorer: React.FC = () => {
       for (const city of country.cities) {
         for (const place of city.touristPlaces) {
           if (place.name.toLowerCase().includes(queryLower)) {
-            // Found place - navigate directly
+            // Push snapshot from globe before deep-diving
+            pushCameraSnapshot([]);
             st.selectedCountry = country;
             st.selectedCity = city;
             st.selectedPlace = place;
@@ -784,7 +871,7 @@ const PlanetExplorer: React.FC = () => {
           }
         }
         if (city.name.toLowerCase().includes(queryLower)) {
-          // Found city
+          pushCameraSnapshot([]);
           st.selectedCountry = country;
           st.selectedCity = city;
           st.currentLevel = 'city';
@@ -799,7 +886,7 @@ const PlanetExplorer: React.FC = () => {
         }
       }
       if (country.name.toLowerCase().includes(queryLower)) {
-        // Found country
+        pushCameraSnapshot([]);
         st.selectedCountry = country;
         st.currentLevel = 'country';
         setInteractionState({ level: 'country', countryName: country.name, cityName: null, placeName: null });
@@ -814,6 +901,7 @@ const PlanetExplorer: React.FC = () => {
     setSearchAnswer('Buscando ubicación...');
     const coords = await getCoordinatesFromNominatim(query);
     if (coords) {
+      pushCameraSnapshot([]);
       // Add as search marker and rotate globe toward it
       st.searchMarkers = [{ lat: coords.lat, lng: coords.lng, name: query, displayName: coords.displayName }];
       st.searchMarkerPulse = 0;
@@ -828,7 +916,7 @@ const PlanetExplorer: React.FC = () => {
     } else {
       setSearchAnswer('No encontramos ese lugar. Intenta con otro nombre.');
     }
-  }, [searchQuery]);
+  }, [searchQuery, pushCameraSnapshot]);
 
   const zoomToLocation = (lat: number, lng: number, name: string, level: 'country' | 'city' | 'place') => {
     const st = stateRef.current;
@@ -1000,6 +1088,7 @@ const PlanetExplorer: React.FC = () => {
             const r = st.hoverRadiusMap.get(country.name) || BASE_RADIUS;
             const dx = mx - p.x, dy = my - p.y;
             if (dx * dx + dy * dy < r * r) {
+              pushCameraSnapshot([]);
               st.selectedCountry = country;
               st.currentLevel = 'country';
               setInteractionState({ level: 'country', countryName: country.name, cityName: null, placeName: null });
@@ -1017,11 +1106,13 @@ const PlanetExplorer: React.FC = () => {
             const r = st.hoverRadiusMap.get(city.name) || BASE_RADIUS;
             const dx = mx - p.x, dy = my - p.y;
             if (dx * dx + dy * dy < r * r) {
+              const prevBc: BreadcrumbItem[] = [{ label: 'Globo', level: 'globe' }];
+              pushCameraSnapshot(prevBc);
               st.selectedCity = city;
               st.currentLevel = 'city';
               setInteractionState({ level: 'city', countryName: st.selectedCountry.name, cityName: city.name, placeName: null });
               setBreadcrumbs([
-                { label: 'Globo', level: 'globe' },
+                ...prevBc,
                 { label: st.selectedCountry.name, level: 'country' },
               ]);
               zoomToLocation(city.lat, city.lng, city.name, 'city');
@@ -1037,12 +1128,16 @@ const PlanetExplorer: React.FC = () => {
             const r = st.hoverRadiusMap.get(place.name) || BASE_RADIUS;
             const dx = mx - p.x, dy = my - p.y;
             if (dx * dx + dy * dy < r * r) {
+              const prevBc: BreadcrumbItem[] = [
+                { label: 'Globo', level: 'globe' },
+                { label: st.selectedCountry?.name || '', level: 'country' },
+              ];
+              pushCameraSnapshot(prevBc);
               st.selectedPlace = place;
               st.currentLevel = 'place';
               setInteractionState({ level: 'place', countryName: st.selectedCountry?.name || null, cityName: st.selectedCity.name, placeName: place.name });
               setBreadcrumbs([
-                { label: 'Globo', level: 'globe' },
-                { label: st.selectedCountry?.name || '', level: 'country' },
+                ...prevBc,
                 { label: st.selectedCity.name, level: 'city' },
               ]);
               zoomToLocation(place.lat, place.lng, place.name, 'place');
@@ -1105,7 +1200,8 @@ const PlanetExplorer: React.FC = () => {
         curCY = lerp(st.zoomStartCenter.y, st.zoomEndCenter.y, eased);
         if (st.zoomProgress >= 1) {
           st.zooming = false;
-          st.zoomedOut = true;
+          // Only freeze rotation when zoomed INTO a region. At globe level, keep spinning.
+          st.zoomedOut = st.currentLevel !== 'globe';
           st.zoomAnimationComplete = true;
           st.zoomProgress = 0;
           // Persist the final zoomed values so they don't snap back
@@ -1192,6 +1288,43 @@ const PlanetExplorer: React.FC = () => {
       }
 
       ctx!.globalAlpha = 1;
+
+      // Highlight silhouette of selected country (GeoJSON polygons) at country/city/place levels
+      if (st.selectedCountry && st.currentLevel !== 'globe') {
+        const polys = countryBordersByNameRef.current.get(st.selectedCountry.name);
+        if (polys && polys.length > 0) {
+          ctx!.save();
+          ctx!.strokeStyle = '#60A5FA';
+          ctx!.lineWidth = 2.2;
+          ctx!.shadowColor = '#3B82F6';
+          ctx!.shadowBlur = 14;
+          ctx!.globalAlpha = st.currentLevel === 'city' || st.currentLevel === 'place' ? 0.55 : 0.95;
+
+          for (const ring of polys) {
+            ctx!.beginPath();
+            let first = true;
+            const pts = ring.map(([lat, lng]) => {
+              const s = geoToSpherical(lat, lng);
+              return sphereTo2D(s.theta, s.phi, curRot, curCX, curCY, curRadius);
+            });
+            const visCount = pts.filter(p => p.visible).length;
+            if (visCount < pts.length * 0.2) continue;
+            for (const p of pts) {
+              if (p.visible) {
+                if (first) { ctx!.moveTo(p.x, p.y); first = false; }
+                else ctx!.lineTo(p.x, p.y);
+              } else {
+                first = true;
+              }
+            }
+            // Soft fill
+            ctx!.fillStyle = 'rgba(59, 130, 246, 0.08)';
+            ctx!.fill();
+            ctx!.stroke();
+          }
+          ctx!.restore();
+        }
+      }
 
       // Draw globe grid lines (latitude and longitude) - globe level only
       if (st.currentLevel === 'globe') {
@@ -1463,7 +1596,7 @@ const PlanetExplorer: React.FC = () => {
   }, [resizeCanvas]);
 
   return (
-    <div className="planet-explorer-root" style={{ position: 'relative', width: '100%', height: 'calc(100vh - 72px)', background: '#0D1117', overflow: 'hidden', fontFamily: "'Inter', sans-serif" }}>
+    <div className="planet-explorer-root" style={{ position: 'fixed', inset: 0, background: '#0D1117', overflow: 'hidden', fontFamily: "'Inter', sans-serif", zIndex: 50 }}>
       {/* Canvas container */}
       <div
         ref={containerRef}
@@ -1596,95 +1729,96 @@ const PlanetExplorer: React.FC = () => {
         </div>
       )}
 
-      {/* Search bar */}
+      {/* Search bar - center-left, glassmorphism */}
       <div
         style={{
           position: 'absolute',
-          left: 0,
-          bottom: 0,
-          width: '100%',
-          boxSizing: 'border-box',
-          padding: '12px 12px 16px',
+          left: '24px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: '320px',
+          maxWidth: 'calc(100vw - 48px)',
+          zIndex: 10,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 10,
-          gap: '6px',
+          gap: '10px',
         }}
       >
-        {searchAnswer && (
-          <div style={{
-            fontWeight: '500',
-            color: '#C5C5C5',
-            fontSize: '0.85rem',
-            maxWidth: '600px',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            background: 'rgba(20, 25, 35, 0.85)',
-            backdropFilter: 'blur(8px)',
-            padding: '6px 16px',
-            borderRadius: '20px',
-            border: '1px solid rgba(100, 150, 255, 0.15)',
-          }}>
-            {searchAnswer}
-          </div>
-        )}
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(20, 25, 35, 0.92)',
-            backdropFilter: 'blur(12px)',
-            borderRadius: '50px',
-            padding: '10px 16px',
-            width: '100%',
-            maxWidth: '700px',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
-            border: '1px solid rgba(100, 150, 255, 0.12)',
+            background: 'rgba(15, 23, 42, 0.35)',
+            backdropFilter: 'blur(16px) saturate(140%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+            border: '1px solid rgba(148, 163, 184, 0.18)',
+            borderRadius: '18px',
+            padding: '14px 16px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
           }}
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" style={{ flexShrink: 0 }}>
-            <circle cx="11" cy="11" r="8"/>
-            <path d="M21 21l-4.35-4.35"/>
-          </svg>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-            placeholder="Buscar país, ciudad o lugar..."
-            style={{
-              flex: 1,
-              padding: '4px 6px',
-              background: 'transparent',
-              border: 'none',
-              fontSize: '0.9rem',
-              outline: 'none',
-              color: '#fff',
-              minWidth: 0,
-            }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+              placeholder="País, ciudad, lugar..."
+              style={{
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#fff',
+                fontSize: '0.95rem',
+                minWidth: 0,
+              }}
+            />
+          </div>
           <button
             onClick={handleSearch}
             style={{
-              padding: '8px 20px',
-              background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
+              marginTop: '10px',
+              width: '100%',
+              padding: '9px 0',
+              background: 'linear-gradient(135deg, rgba(59,130,246,0.85), rgba(37,99,235,0.85))',
+              border: '1px solid rgba(96,165,250,0.4)',
               color: '#fff',
-              border: 'none',
-              borderRadius: '24px',
+              borderRadius: '12px',
               fontSize: '0.85rem',
-              fontWeight: 'bold',
+              fontWeight: 600,
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
             }}
           >
             Buscar
           </button>
         </div>
+        {(searchAnswer || dynamicLoading) && (
+          <div
+            style={{
+              background: 'rgba(15, 23, 42, 0.45)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(148, 163, 184, 0.15)',
+              borderRadius: '12px',
+              padding: '8px 12px',
+              color: '#CBD5E1',
+              fontSize: '0.8rem',
+            }}
+          >
+            {dynamicLoading ? 'Cargando datos de la región...' : searchAnswer}
+          </div>
+        )}
       </div>
+
+      {/* Right info panel (dynamic) */}
+      <InfoPanel
+        country={interactionState.countryName}
+        city={interactionState.cityName}
+        place={interactionState.placeName}
+        onClose={interactionState.level !== 'globe' ? goBack : undefined}
+      />
     </div>
   );
 };

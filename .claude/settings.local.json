@@ -6,7 +6,9 @@
       "Bash(npx vite:*)",
       "Bash(npm install:*)",
       "Bash(where node:*)",
-      "Bash(npx prettier *)"
+      "Bash(npx prettier *)",
+      "Bash(xargs ls -la)",
+      "Bash(sort -k5 -n -r)"
     ]
   }
 }

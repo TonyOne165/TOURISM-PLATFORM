@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { CityProvider } from '@/contexts/CityContext';
@@ -52,6 +52,8 @@ const AppContent = () => {
   const { user, loading: authLoading } = useAuth();
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const location = useLocation();
+  const isFullscreen = location.pathname === '/navegar';
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -99,8 +101,8 @@ const AppContent = () => {
 
   return (
     <div className="flex flex-col min-h-screen">
-      <Header />
-      {maintenanceMode && isAdmin && (
+      {!isFullscreen && <Header />}
+      {maintenanceMode && isAdmin && !isFullscreen && (
         <div className="bg-warning text-warning-content text-center py-2 text-sm font-medium mt-16">
           Modo mantenimiento activo — solo visible para administradores
         </div>
@@ -153,8 +155,8 @@ const AppContent = () => {
           </Route>
         </Routes>
       </main>
-      <Footer />
-      <AIChatbot />
+      {!isFullscreen && <Footer />}
+      {!isFullscreen && <AIChatbot />}
     </div>
   );
 };
