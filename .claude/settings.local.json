@@ -11,7 +11,9 @@
       "Bash(sort -k5 -n -r)",
       "Bash(node *)",
       "Bash(awk 'NR==557' /home/tony_one_165/Documentos/kyle/Proyectos/TOURISM-PLATFORM-main/src/pages/PlanetExplorer.tsx)",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 *)"
     ]
   }
 }

@@ -19,6 +19,8 @@ interface CityData {
   touristPlaces: TouristPlaceData[];
   /** Name of the admin-1 region (department/state) this city belongs to, as it appears in admin1.geo.json */
   admin1Name?: string;
+  /** Override the default city-level zoom factor (initialRadius * 80). Useful for remote islands (e.g. San Andrés) that lie far from the continent and otherwise render too small. */
+  zoomMultiplier?: number;
 }
 
 interface TouristPlaceData {
@@ -80,6 +82,8 @@ const countryData: Record<string, CountryData> = {
         lat: 12.5847,
         lng: -81.7006,
         admin1Name: 'San Andrés y Providencia',
+        // Remote island ~700 km from the mainland; needs a deeper zoom so the archipelago fills the viewport instead of appearing as a speck next to Colombia.
+        zoomMultiplier: 150,
         touristPlaces: [
           { name: 'Johnny Cay', lat: 12.5970, lng: -81.6986, type: 'beach', description: 'Islote turístico de arenas blancas' },
           { name: 'Cueva de Morgan', lat: 12.5494, lng: -81.7344, type: 'landmark', description: 'Atracción natural histórica' },
@@ -143,6 +147,34 @@ const countryData: Record<string, CountryData> = {
           { name: 'Ciudad Perdida', lat: 11.0833, lng: -74.1167, type: 'landmark', description: 'Sitio arqueológico ancestral' },
         ]
       },
+      // Capitales de departamento — admin1Name debe coincidir EXACTAMENTE con la propiedad `name` de admin1.geo.json (iso_a2 === 'CO').
+      { name: 'Barranquilla',           lat: 10.9685, lng: -74.7813, admin1Name: 'Atlántico',           touristPlaces: [] },
+      { name: 'Cali',                   lat: 3.4516,  lng: -76.5320, admin1Name: 'Valle del Cauca',     touristPlaces: [] },
+      { name: 'Bucaramanga',            lat: 7.1193,  lng: -73.1227, admin1Name: 'Santander',           touristPlaces: [] },
+      { name: 'Cúcuta',                 lat: 7.8939,  lng: -72.5078, admin1Name: 'Norte de Santander',  touristPlaces: [] },
+      { name: 'Pereira',                lat: 4.8133,  lng: -75.6961, admin1Name: 'Risaralda',           touristPlaces: [] },
+      { name: 'Manizales',              lat: 5.0689,  lng: -75.5174, admin1Name: 'Caldas',              touristPlaces: [] },
+      { name: 'Armenia',                lat: 4.5339,  lng: -75.6811, admin1Name: 'Quindío',             touristPlaces: [] },
+      { name: 'Ibagué',                 lat: 4.4389,  lng: -75.2322, admin1Name: 'Tolima',              touristPlaces: [] },
+      { name: 'Neiva',                  lat: 2.9273,  lng: -75.2819, admin1Name: 'Huila',               touristPlaces: [] },
+      { name: 'Popayán',                lat: 2.4448,  lng: -76.6147, admin1Name: 'Cauca',               touristPlaces: [] },
+      { name: 'Pasto',                  lat: 1.2136,  lng: -77.2811, admin1Name: 'Nariño',              touristPlaces: [] },
+      { name: 'Mocoa',                  lat: 1.1521,  lng: -76.6477, admin1Name: 'Putumayo',            touristPlaces: [] },
+      { name: 'Florencia',              lat: 1.6144,  lng: -75.6062, admin1Name: 'Caquetá',             touristPlaces: [] },
+      { name: 'Leticia',                lat: -4.2150, lng: -69.9406, admin1Name: 'Amazonas',            touristPlaces: [] },
+      { name: 'Mitú',                   lat: 1.2538,  lng: -70.2342, admin1Name: 'Vaupés',              touristPlaces: [] },
+      { name: 'Inírida',                lat: 3.8653,  lng: -67.9239, admin1Name: 'Guainía',             touristPlaces: [] },
+      { name: 'San José del Guaviare',  lat: 2.5667,  lng: -72.6420, admin1Name: 'Guaviare',            touristPlaces: [] },
+      { name: 'Villavicencio',          lat: 4.1420,  lng: -73.6266, admin1Name: 'Meta',                touristPlaces: [] },
+      { name: 'Yopal',                  lat: 5.3388,  lng: -72.3940, admin1Name: 'Casanare',            touristPlaces: [] },
+      { name: 'Arauca',                 lat: 7.0903,  lng: -70.7617, admin1Name: 'Arauca',              touristPlaces: [] },
+      { name: 'Puerto Carreño',         lat: 6.1894,  lng: -67.4831, admin1Name: 'Vichada',             touristPlaces: [] },
+      { name: 'Tunja',                  lat: 5.5446,  lng: -73.3577, admin1Name: 'Boyacá',              touristPlaces: [] },
+      { name: 'Riohacha',               lat: 11.5444, lng: -72.9072, admin1Name: 'La Guajira',          touristPlaces: [] },
+      { name: 'Valledupar',             lat: 10.4631, lng: -73.2532, admin1Name: 'Cesar',               touristPlaces: [] },
+      { name: 'Sincelejo',              lat: 9.3047,  lng: -75.3978, admin1Name: 'Sucre',               touristPlaces: [] },
+      { name: 'Montería',               lat: 8.7479,  lng: -75.8814, admin1Name: 'Córdoba',             touristPlaces: [] },
+      { name: 'Quibdó',                 lat: 5.6919,  lng: -76.6583, admin1Name: 'Chocó',               touristPlaces: [] },
     ]
   },
   'USA': {
@@ -1152,9 +1184,15 @@ const PlanetExplorer: React.FC = () => {
     // Country: zoom in close enough that the country fills most of the viewport
     // City: zoom so tourist places spread visually (~hundreds of px apart for ~10km separation)
     // Place: very close street-level zoom on a single landmark
+    // A city can override the default city-level multiplier via CityData.zoomMultiplier — used for remote
+    // islands (e.g. San Andrés) that sit hundreds of km from the continent and would otherwise be invisible.
+    const cityMultiplier =
+      level === 'city' && st.selectedCity?.zoomMultiplier
+        ? st.selectedCity.zoomMultiplier
+        : 80;
     const zoomFactors = {
       country: { endRadius: initialRadius * 6 },
-      city: { endRadius: initialRadius * 80 },
+      city: { endRadius: initialRadius * cityMultiplier },
       place: { endRadius: initialRadius * 220 },
     };
 
@@ -1273,6 +1311,7 @@ const PlanetExplorer: React.FC = () => {
         const items = itemsRef.current;
         if (items.length > 0) {
           const itemProj = items.map(item => {
+            // TODO: Verificar coords en Firebase para ubicación exacta — los marcadores se ubican según item.data.coords; si están aproximados el pin aparecerá fuera de lugar.
             const coords = item.kind === 'tour' ? item.data.coords : item.data.coords;
             const spherical = geoToSpherical(coords.lat, coords.lng);
             return { p: sphereTo2D(spherical.theta, spherical.phi, st.rotation, st.centerX, st.centerY, st.radius, st.rotationY) };
@@ -1376,6 +1415,7 @@ const PlanetExplorer: React.FC = () => {
         const items = itemsRef.current;
         if (items.length > 0) {
           const itemProj = items.map(item => {
+            // TODO: Verificar coords en Firebase para ubicación exacta — el click hit-test depende de coords precisos.
             const coords = item.kind === 'tour' ? item.data.coords : item.data.coords;
             const spherical = geoToSpherical(coords.lat, coords.lng);
             return { item, p: sphereTo2D(spherical.theta, spherical.phi, st.rotation, st.centerX, st.centerY, st.radius, st.rotationY) };
@@ -1908,6 +1948,7 @@ const PlanetExplorer: React.FC = () => {
       if ((st.currentLevel === 'city' || st.currentLevel === 'place') && itemsRef.current.length > 0 && st.zoomAnimationComplete) {
         const items = itemsRef.current;
         const projected = items.map(item => {
+          // TODO: Verificar coords en Firebase para ubicación exacta — la posición visual del pin sale de coords.lat/lng tal cual están en Firestore.
           const coords = item.kind === 'tour' ? item.data.coords : item.data.coords;
           const spherical = geoToSpherical(coords.lat, coords.lng);
           return { item, p: sphereTo2D(spherical.theta, spherical.phi, curRot, curCX, curCY, curRadius, curRotY) };
