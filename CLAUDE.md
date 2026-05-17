@@ -245,7 +245,31 @@ npx tsc --noEmit     # Type check
 
 ---
 
-## 10. TESTING
+## 10. INTERACTION & ZOOM RULES
+
+### 10.1 Free Zoom (Scroll + Pinch)
+If implemented, the globe supports free zoom via mouse wheel and pinch-to-zoom:
+- Free zoom only modifies `st.radius` — it does NOT change `currentLevel`, `selectedCountry`, or `selectedCity`.
+- Free zoom and automatic zoom (`zoomToLocation()`) must coexist. After free zoom, clicking a city should still trigger `zoomToLocation()` normally.
+- All zoom listeners must be added in the same `useEffect` as the other canvas listeners and cleaned up in the return.
+
+### 10.2 Known Bug: `resizeCanvas()` Destroys Zoom
+`resizeCanvas()` unconditionally sets `st.radius = Math.min(w, h) * 0.42`, which destroys the current zoom level. When `currentLevel !== 'globe'`, `resizeCanvas()` MUST preserve the current zoom ratio relative to the base radius.
+
+### 10.3 Known Bug: `rotationY` Clamp Breaks Deep Zoom
+During drag, `rotationY` is clamped to `±Math.PI/3`. But `zoomToLocation()` can set `zoomEndRotationY` to values outside that range. If the user drags at city/place level, the clamp snaps `rotationY` and the view jumps. When `currentLevel !== 'globe'`, the clamp range should be wider (e.g., `±Math.PI`).
+
+### 10.4 InfoPanel Collapsible Behavior
+If the InfoPanel has been converted to a collapsible panel:
+- Default state is collapsed (showing only title bar).
+- Expanded state shows full Wikipedia content.
+- The toggle mechanism (tap/swipe) must be preserved.
+- When an ItemPanel (tour/accommodation) opens, the InfoPanel should auto-collapse.
+- CSS classes follow `.planet-info-panel--collapsed` naming convention.
+
+---
+
+## 11. TESTING
 
 - Cypress is configured in `cypress/` directory.
 - Config: `cypress.config.ts`
@@ -254,7 +278,7 @@ npx tsc --noEmit     # Type check
 
 ---
 
-## 11. CHECKLIST BEFORE EVERY CHANGE
+## 12. CHECKLIST BEFORE EVERY CHANGE
 
 Before committing any change to globe-related code:
 
@@ -269,3 +293,7 @@ Before committing any change to globe-related code:
 - [ ] Firebase collection names are unchanged
 - [ ] The draw loop still follows the correct rendering order
 - [ ] Mobile responsive breakpoints are intact
+- [ ] `resizeCanvas()` preserves zoom ratio when zoomed in
+- [ ] `rotationY` clamp doesn't break deep zoom levels
+- [ ] Free zoom (wheel/pinch) doesn't change interaction levels
+- [ ] InfoPanel collapse/expand toggle works on both desktop and mobile

@@ -5,6 +5,9 @@ interface Props {
   city: string | null;
   place: string | null;
   onClose?: () => void;
+  /** When true, the panel collapses to a thin bar regardless of user toggle.
+   *  Used to get the panel out of the way when an ItemPanel (tour/accommodation) is open. */
+  forceCollapsed?: boolean;
 }
 
 interface WikiSummary {
@@ -25,12 +28,19 @@ async function fetchWikiSummary(title: string, lang: 'es' | 'en'): Promise<WikiS
   }
 }
 
-export const InfoPanel: React.FC<Props> = ({ country, city, place, onClose }) => {
+export const InfoPanel: React.FC<Props> = ({ country, city, place, onClose, forceCollapsed }) => {
   const [data, setData] = useState<WikiSummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [userCollapsed, setUserCollapsed] = useState(true);
 
   const topic = place || city || country;
   const kind: 'place' | 'city' | 'country' | null = place ? 'place' : city ? 'city' : country ? 'country' : null;
+
+  // When an ItemPanel opens (forceCollapsed=true), snap back to collapsed even if the user had
+  // expanded the panel. Doesn't lock — once forceCollapsed flips false, the user can re-expand.
+  useEffect(() => {
+    if (forceCollapsed) setUserCollapsed(true);
+  }, [forceCollapsed]);
 
   useEffect(() => {
     if (!topic) {
@@ -54,6 +64,7 @@ export const InfoPanel: React.FC<Props> = ({ country, city, place, onClose }) =>
 
   if (!topic) return null;
 
+  const collapsed = forceCollapsed || userCollapsed;
   const kindLabel = kind === 'place' ? 'Lugar turístico' : kind === 'city' ? 'Ciudad' : 'País';
   const breadcrumb =
     kind === 'place' && country && city
@@ -63,22 +74,49 @@ export const InfoPanel: React.FC<Props> = ({ country, city, place, onClose }) =>
       : null;
 
   return (
-    <aside className="planet-info-panel" aria-label="Información del destino">
+    <aside
+      className={`planet-info-panel${collapsed ? ' planet-info-panel--collapsed' : ''}`}
+      aria-label="Información del destino"
+    >
+      {/* Collapsed-state toggle — a tap target that hugs the visible edge of the panel.
+          Hidden via CSS when the panel is expanded; the regular header takes over instead. */}
+      <button
+        type="button"
+        className="planet-info-panel__toggle"
+        onClick={() => setUserCollapsed(c => !c)}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? `Mostrar información de ${topic}` : 'Ocultar información'}
+      >
+        <span className="planet-info-panel__toggle-grip" aria-hidden="true" />
+        <span className="planet-info-panel__toggle-label">{topic}</span>
+        <span className="planet-info-panel__toggle-chevron" aria-hidden="true">⌃</span>
+      </button>
+
       <header className="planet-info-panel__header">
         <div className="planet-info-panel__heading">
           <div className="planet-info-panel__kind">{kindLabel}</div>
           <h2 className="planet-info-panel__title">{topic}</h2>
           {breadcrumb && <div className="planet-info-panel__breadcrumb">{breadcrumb}</div>}
         </div>
-        {onClose && (
+        <div className="planet-info-panel__header-actions">
           <button
-            onClick={onClose}
-            aria-label="Cerrar panel"
-            className="planet-info-panel__close"
+            type="button"
+            onClick={() => setUserCollapsed(true)}
+            aria-label="Minimizar panel"
+            className="planet-info-panel__minimize"
           >
-            ×
+            –
           </button>
-        )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Cerrar panel"
+              className="planet-info-panel__close"
+            >
+              ×
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="planet-info-panel__body">

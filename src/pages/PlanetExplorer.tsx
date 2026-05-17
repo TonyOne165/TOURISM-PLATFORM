@@ -973,12 +973,19 @@ const PlanetExplorer: React.FC = () => {
     centerX: 500,
     centerY: 400,
     radius: 360,
+    // Base globe radius for the current viewport (updated in resizeCanvas). Used to preserve the
+    // user's manual zoom across resize events — without this, a mobile address-bar show/hide would
+    // reset `radius` to the base and collapse the deep-zoom view.
+    baseRadius: 360,
     // Drag state
     isDragging: false,
     lastMouseX: 0,
     lastMouseY: 0,
     dragDeltaX: 0,
     dragDeltaY: 0,
+    // Pinch-to-zoom state (two-finger gesture on touch devices)
+    isPinching: false,
+    lastPinchDistance: 0,
     // Level state
     currentLevel: 'globe' as 'globe' | 'country' | 'city' | 'place',
     selectedCountry: null as CountryData | null,
@@ -1023,7 +1030,18 @@ const PlanetExplorer: React.FC = () => {
     const st = stateRef.current;
     st.centerX = w / 2;
     st.centerY = h / 2;
-    st.radius = Math.min(w, h) * 0.42;
+    // Preserve the user's current zoom ratio across resize events. Mobile browsers fire `resize`
+    // when the address bar shows/hides; without this guard we would snap `radius` back to the
+    // base and yank the user out of a deep zoom (e.g. inside a city).
+    const newBase = Math.min(w, h) * 0.42;
+    const prevBase = st.baseRadius;
+    if (prevBase > 0 && st.currentLevel !== 'globe') {
+      const zoomRatio = st.radius / prevBase;
+      st.radius = newBase * zoomRatio;
+    } else {
+      st.radius = newBase;
+    }
+    st.baseRadius = newBase;
   }, []);
 
   /* ---- navigation helpers ---- */
@@ -1244,11 +1262,39 @@ const PlanetExplorer: React.FC = () => {
       return { x: (e as MouseEvent).clientX - rect.left, y: (e as MouseEvent).clientY - rect.top };
     };
 
+    const pinchDistance = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.hypot(dx, dy);
+    };
+
+    const clampManualRadius = (next: number) => {
+      const st = stateRef.current;
+      const min = st.baseRadius;       // never zoom out past the base globe size
+      const max = st.baseRadius * 250; // cap deep zoom so we don't overflow numeric/visual limits
+      return Math.max(min, Math.min(max, next));
+    };
+
     const onPointerDown = (e: MouseEvent | TouchEvent) => {
       const st = stateRef.current;
+
+      // Two-finger touch -> begin pinch-to-zoom. Cancel any drag so the single-touch rotate path
+      // doesn't fight the gesture.
+      if ('touches' in e && e.touches.length >= 2) {
+        e.preventDefault();
+        st.isDragging = false;
+        st.isPinching = true;
+        st.lastPinchDistance = pinchDistance(e.touches);
+        // Mark dragDelta so a click cannot fire when the user lifts both fingers.
+        st.dragDeltaX = 999;
+        st.dragDeltaY = 999;
+        return;
+      }
+
       if (st.zooming) return;
       const pos = getMousePos(e);
       st.isDragging = true;
+      st.isPinching = false;
       st.lastMouseX = pos.x;
       st.lastMouseY = pos.y;
       st.dragDeltaX = 0;
@@ -1258,6 +1304,21 @@ const PlanetExplorer: React.FC = () => {
     const onPointerMove = (e: MouseEvent | TouchEvent) => {
       if ('touches' in e) e.preventDefault();
       const st = stateRef.current;
+
+      // Pinch-to-zoom: when two fingers are down, scale `radius` by the change in finger spacing.
+      // Lives BEFORE the drag/hover branches so it short-circuits both.
+      if ('touches' in e && e.touches.length >= 2 && st.isPinching) {
+        if (st.zooming) return;
+        const d = pinchDistance(e.touches);
+        if (st.lastPinchDistance > 0) {
+          const ratio = d / st.lastPinchDistance;
+          st.radius = clampManualRadius(st.radius * ratio);
+          st.zoomedOut = true; // stop globe-level auto-rotation while the user is interacting
+        }
+        st.lastPinchDistance = d;
+        return;
+      }
+
       const pos = getMousePos(e);
 
       if (st.isDragging) {
@@ -1268,7 +1329,11 @@ const PlanetExplorer: React.FC = () => {
         // Invert rotation direction for natural drag feel
         st.rotation += deltaX * DRAG_SENSITIVITY;
         st.rotationY += deltaY * DRAG_SENSITIVITY;
-        st.rotationY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, st.rotationY));
+        // At globe level we cap the tilt at ±60° to keep the poles from flipping. When the user is
+        // zoomed into a country/city/place we relax the cap — zoomEndRotationY for high-latitude
+        // targets can sit outside ±π/3, and clamping it on the first drag snaps the view away.
+        const maxTilt = st.currentLevel === 'globe' ? Math.PI / 3 : Math.PI;
+        st.rotationY = Math.max(-maxTilt, Math.min(maxTilt, st.rotationY));
         st.lastMouseX = pos.x;
         st.lastMouseY = pos.y;
         canvas.style.cursor = 'grabbing';
@@ -1350,10 +1415,42 @@ const PlanetExplorer: React.FC = () => {
       }
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (e?: MouseEvent | TouchEvent) => {
       const st = stateRef.current;
+
+      // Touch endings need to consider the touches that remain on screen.
+      if (e && 'touches' in e) {
+        if (e.touches.length < 2) {
+          st.isPinching = false;
+          st.lastPinchDistance = 0;
+        }
+        if (e.touches.length === 1) {
+          // User lifted one of two fingers — re-anchor the remaining finger so a follow-up drag
+          // doesn't jump. Keep dragDelta high so this finger-lift can't synthesize a click.
+          const rect = canvas.getBoundingClientRect();
+          st.lastMouseX = e.touches[0].clientX - rect.left;
+          st.lastMouseY = e.touches[0].clientY - rect.top;
+          st.isDragging = true;
+          return;
+        }
+      }
+
       st.isDragging = false;
+      st.isPinching = false;
+      st.lastPinchDistance = 0;
       canvas.style.cursor = 'default';
+    };
+
+    // Mouse wheel zoom (desktop). Negative deltaY = scroll up = zoom in, so `1 - deltaY * k` gives
+    // a factor > 1 when scrolling up. Independent from `zoomToLocation` — only mutates radius and
+    // sets `zoomedOut` to halt auto-rotation; never changes `currentLevel`.
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const st = stateRef.current;
+      if (st.zooming) return; // don't fight an active zoom animation
+      const factor = 1 - e.deltaY * 0.001;
+      st.radius = clampManualRadius(st.radius * factor);
+      st.zoomedOut = true;
     };
 
     const onClick = (e: MouseEvent) => {
@@ -1469,11 +1566,13 @@ const PlanetExplorer: React.FC = () => {
     canvas.addEventListener('mouseup', onPointerUp);
     canvas.addEventListener('mouseleave', onPointerUp);
     canvas.addEventListener('click', onClick);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
 
     // Touch support
     canvas.addEventListener('touchstart', onPointerDown, { passive: false });
     canvas.addEventListener('touchmove', onPointerMove, { passive: false });
     canvas.addEventListener('touchend', onPointerUp);
+    canvas.addEventListener('touchcancel', onPointerUp);
 
     /* draw loop */
     function draw() {
@@ -2068,9 +2167,11 @@ const PlanetExplorer: React.FC = () => {
       canvas.removeEventListener('mouseup', onPointerUp);
       canvas.removeEventListener('mouseleave', onPointerUp);
       canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('touchstart', onPointerDown);
       canvas.removeEventListener('touchmove', onPointerMove);
       canvas.removeEventListener('touchend', onPointerUp);
+      canvas.removeEventListener('touchcancel', onPointerUp);
       window.removeEventListener('resize', onResize);
     };
   }, [resizeCanvas]);
@@ -2182,16 +2283,15 @@ const PlanetExplorer: React.FC = () => {
         )}
       </div>
 
-      {/* Right info panel — context (city/country/place). Hidden when an item panel is open
-          on mobile to avoid stacking two panels on top of each other. */}
-      {!selectedItem && (
-        <InfoPanel
-          country={interactionState.countryName}
-          city={interactionState.cityName}
-          place={interactionState.placeName}
-          onClose={interactionState.level !== 'globe' ? goBack : undefined}
-        />
-      )}
+      {/* Right info panel — context (city/country/place). Always rendered, but auto-collapses
+          to a thin bar when an ItemPanel is open so the two panels don't fight for space. */}
+      <InfoPanel
+        country={interactionState.countryName}
+        city={interactionState.cityName}
+        place={interactionState.placeName}
+        onClose={interactionState.level !== 'globe' ? goBack : undefined}
+        forceCollapsed={!!selectedItem}
+      />
 
       {/* Tour / Accommodation detail panel with "Reservar" CTA */}
       {selectedItem && (
