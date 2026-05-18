@@ -203,13 +203,34 @@ export const Register: React.FC = () => {
 
             {/* Terms and Conditions */}
             <div className="form-control">
-              <label className="label cursor-pointer justify-start gap-3">
-                <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" required disabled={loading} />
-                <span className="label-text text-sm">
-                  I agree to the{' '}
-                  <a href="#" className="link link-primary font-semibold">Terms of Service</a>
-                  {' '}and{' '}
-                  <a href="#" className="link link-primary font-semibold">Privacy Policy</a>
+              <label className="label cursor-pointer justify-start gap-3 items-start">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-primary checkbox-sm mt-1"
+                  required
+                  disabled={loading}
+                  aria-describedby="register-legal-disclaimer"
+                />
+                <span id="register-legal-disclaimer" className="label-text text-sm">
+                  Al continuar, acepto los{' '}
+                  <a
+                    href="/terminos-y-condiciones"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="link link-primary font-semibold"
+                  >
+                    Términos y Condiciones
+                  </a>
+                  {' '}y la{' '}
+                  <a
+                    href="/politica-de-privacidad"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="link link-primary font-semibold"
+                  >
+                    Política de Privacidad
+                  </a>
+                  , incluyendo el uso opcional de mi ubicación para sugerirme destinos cercanos. No se realiza rastreo continuo.
                 </span>
               </label>
             </div>

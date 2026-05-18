@@ -4,6 +4,7 @@ import { sendChatMessage } from '../../services/aiService';
 import { useTours } from '../../hooks/useTours';
 import { useAccommodations } from '../../hooks/useAccommodations';
 import { useChatHistory } from '../../hooks/useChatHistory';
+import { useTextToSpeech } from '../../hooks/useTextToSpeech';
 import { ChatCardComponent } from './ChatCard';
 import { VoiceInput } from './VoiceInput';
 import type { ChatMessage } from '../../types';
@@ -34,6 +35,18 @@ export const AIChatbot = () => {
 
   const messages = getActiveMessages();
 
+  // Voice mode (text-to-speech) — reads assistant replies out loud when enabled.
+  const {
+    enabled: ttsEnabled,
+    supported: ttsSupported,
+    speaking: ttsSpeaking,
+    speak: ttsSpeak,
+    cancel: ttsCancel,
+    toggle: ttsToggle,
+  } = useTextToSpeech();
+  // Track which assistant message we've already read so re-renders don't re-trigger speech.
+  const lastSpokenIdRef = useRef<string | null>(null);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -45,6 +58,30 @@ export const AIChatbot = () => {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen, view]);
+
+  // Speak new assistant replies aloud when voice mode is on. Only triggers when a brand-new
+  // assistant message arrives (compared by id), so re-renders and conversation switches don't
+  // replay older messages.
+  useEffect(() => {
+    if (!isOpen || !ttsEnabled || !ttsSupported) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant') return;
+    if (last.id === lastSpokenIdRef.current) return;
+    lastSpokenIdRef.current = last.id;
+    ttsSpeak(last.content);
+  }, [messages, isOpen, ttsEnabled, ttsSupported, ttsSpeak]);
+
+  // Cancel any in-flight speech when the chat is closed so the assistant doesn't keep talking
+  // to an empty room.
+  useEffect(() => {
+    if (!isOpen) ttsCancel();
+  }, [isOpen, ttsCancel]);
+
+  // Reset the spoken-message tracker when switching conversations so the first reply of the new
+  // thread is read out (assuming voice mode is on).
+  useEffect(() => {
+    lastSpokenIdRef.current = null;
+  }, [activeConversationId]);
 
   // Ensure a conversation exists when opening
   const handleOpen = () => {
@@ -58,6 +95,10 @@ export const AIChatbot = () => {
   const handleSend = async (text?: string) => {
     const msgText = (text || input).trim();
     if (!msgText || sending) return;
+
+    // Interrupt any ongoing speech the moment the user sends a new message — it's rude for the
+    // bot to keep reading the previous reply once a follow-up is on the way.
+    ttsCancel();
 
     // Ensure we have an active conversation
     let convId = activeConversationId;
@@ -177,28 +218,36 @@ export const AIChatbot = () => {
     <>
       {/* Toggle Button */}
       <button
-        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 btn btn-circle btn-lg bg-brand-blue text-white hover:bg-brand-dark border-0 shadow-2xl group"
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 btn btn-circle btn-lg bg-brand-blue text-white hover:bg-brand-dark border-0 shadow-2xl group focus-visible:ring-2 focus-visible:ring-brand-cream focus-visible:ring-offset-2 focus-visible:ring-offset-brand-dark"
         onClick={() => isOpen ? setIsOpen(false) : handleOpen()}
-        aria-label={isOpen ? 'Cerrar chat' : 'Abrir asistente virtual'}
+        aria-label={isOpen ? 'Cerrar asistente virtual' : 'Abrir asistente virtual'}
+        aria-expanded={isOpen}
+        aria-controls="ai-chatbot-window"
       >
         {isOpen ? (
-          <svg className="w-6 h-6 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 transition-transform group-hover:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         ) : (
           <>
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
             {/* Notification dot for unread */}
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-brand-brown rounded-full animate-pulse" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-brand-brown rounded-full animate-pulse" aria-hidden="true" />
           </>
         )}
       </button>
 
       {/* Chat Window */}
       {isOpen && (
-        <div className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[400px] bg-brand-cream rounded-2xl shadow-2xl border border-brand-beige flex flex-col h-[70vh] sm:h-[550px] overflow-hidden">
+        <div
+          id="ai-chatbot-window"
+          role="dialog"
+          aria-modal="false"
+          aria-label="Asistente virtual de Cartagena Tours"
+          className="fixed bottom-20 sm:bottom-24 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[400px] bg-brand-cream rounded-2xl shadow-2xl border border-brand-beige flex flex-col h-[70vh] sm:h-[550px] overflow-hidden"
+        >
 
           {/* ===== HEADER ===== */}
           <div className="bg-brand-dark text-white rounded-t-2xl px-4 py-3 flex items-center justify-between shrink-0">
@@ -217,23 +266,49 @@ export const AIChatbot = () => {
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {/* Voice mode toggle — reads assistant replies out loud. Only rendered when the
+                  browser exposes SpeechSynthesis; otherwise the toggle is meaningless. */}
+              {ttsSupported && (
+                <button
+                  onClick={ttsToggle}
+                  className={`btn btn-xs btn-ghost text-white hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-brand-cream focus-visible:ring-offset-0 ${ttsEnabled ? 'bg-white/20' : ''}`}
+                  title={ttsEnabled ? 'Modo voz activo — toca para silenciar' : '¿Desea activar el modo voz? Leerá las respuestas en voz alta'}
+                  aria-pressed={ttsEnabled}
+                  aria-label={ttsEnabled ? 'Desactivar lectura en voz alta de las respuestas' : 'Activar lectura en voz alta de las respuestas'}
+                >
+                  {ttsEnabled ? (
+                    // Volume on (animated when actively speaking)
+                    <svg className={`w-4 h-4 ${ttsSpeaking ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                  ) : (
+                    // Volume off / muted
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                    </svg>
+                  )}
+                </button>
+              )}
               {/* History button */}
               <button
                 onClick={() => setView(view === 'history' ? 'chat' : 'history')}
-                className={`btn btn-xs btn-ghost text-white hover:bg-white/10 ${view === 'history' ? 'bg-white/20' : ''}`}
+                className={`btn btn-xs btn-ghost text-white hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-brand-cream ${view === 'history' ? 'bg-white/20' : ''}`}
                 title="Historial"
+                aria-label={view === 'history' ? 'Volver al chat' : 'Ver historial de conversaciones'}
+                aria-pressed={view === 'history'}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </button>
               {/* New conversation */}
               <button
                 onClick={handleNewConversation}
-                className="btn btn-xs btn-ghost text-white hover:bg-white/10"
+                className="btn btn-xs btn-ghost text-white hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-brand-cream"
                 title="Nueva conversación"
+                aria-label="Iniciar nueva conversación"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
               </button>
@@ -293,7 +368,13 @@ export const AIChatbot = () => {
           {view === 'chat' && (
             <>
               {/* Messages Area */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div
+                className="flex-1 overflow-y-auto p-4 space-y-3"
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions text"
+                aria-label="Mensajes de la conversación"
+              >
                 {/* Welcome message when no messages */}
                 {messages.length === 0 && (
                   <div className="text-center py-6">
@@ -409,6 +490,7 @@ export const AIChatbot = () => {
 
               {/* Input Area */}
               <div className="p-3 border-t border-brand-beige shrink-0">
+                <label htmlFor="ai-chatbot-input" className="sr-only">Escribe tu mensaje al asistente virtual</label>
                 <div className="flex gap-2 items-center">
                   <VoiceInput
                     onTranscript={handleVoiceTranscript}
@@ -416,20 +498,23 @@ export const AIChatbot = () => {
                   />
                   <input
                     ref={inputRef}
+                    id="ai-chatbot-input"
                     type="text"
-                    className="input input-bordered input-sm flex-1 bg-white text-brand-dark border-brand-brown/30 rounded-full"
+                    className="input input-bordered input-sm flex-1 bg-white text-brand-dark border-brand-brown/30 rounded-full focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:ring-offset-1"
                     placeholder="Escribe tu pregunta..."
                     value={input}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     disabled={sending}
+                    aria-label="Escribe tu mensaje al asistente virtual"
                   />
                   <button
-                    className="btn bg-brand-blue text-white hover:bg-brand-dark border-0 btn-sm btn-circle"
+                    className="btn bg-brand-blue text-white hover:bg-brand-dark border-0 btn-sm btn-circle focus-visible:ring-2 focus-visible:ring-brand-cream focus-visible:ring-offset-2 focus-visible:ring-offset-brand-cream"
                     onClick={() => handleSend()}
                     disabled={!input.trim() || sending}
+                    aria-label="Enviar mensaje"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                   </button>

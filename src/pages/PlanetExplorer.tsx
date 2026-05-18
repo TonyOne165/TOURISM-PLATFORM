@@ -53,6 +53,27 @@ interface BreadcrumbItem {
   level: 'globe' | 'country' | 'city';
 }
 
+/**
+ * Search-bar autocomplete suggestion. Each kind drives a different click behaviour:
+ *  - country/city/place: replays the existing zoom flow (push snapshot → set level → zoomToLocation).
+ *  - tour/accommodation: opens its ItemPanel (sets selectedItem).
+ *  - geocode: existing search-marker flow (from Nominatim).
+ */
+type SuggestionKind = 'country' | 'city' | 'place' | 'tour' | 'accommodation' | 'geocode';
+interface BaseSuggestion {
+  id: string;
+  label: string;
+  subLabel?: string;
+  kind: SuggestionKind;
+}
+interface CountrySuggestion extends BaseSuggestion { kind: 'country'; country: CountryData }
+interface CitySuggestion   extends BaseSuggestion { kind: 'city'; country: CountryData; city: CityData }
+interface PlaceSuggestion  extends BaseSuggestion { kind: 'place'; country: CountryData; city: CityData; place: TouristPlaceData }
+interface TourSuggestion   extends BaseSuggestion { kind: 'tour'; tourId: string }
+interface AccomSuggestion  extends BaseSuggestion { kind: 'accommodation'; accommodationId: string }
+interface GeocodeSuggestion extends BaseSuggestion { kind: 'geocode'; lat: number; lng: number }
+type Suggestion = CountrySuggestion | CitySuggestion | PlaceSuggestion | TourSuggestion | AccomSuggestion | GeocodeSuggestion;
+
 /* ================================================================
    DATA — Countries with cities and tourist places
    ================================================================ */
@@ -747,6 +768,14 @@ const PlanetExplorer: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchAnswer, setSearchAnswer] = useState('');
   const [ready, setReady] = useState(false);
+  // Autocomplete dropdown state. `showSuggestions` is React state (UI concern), not a ref —
+  // it doesn't interact with the canvas draw loop.
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [nominatimSuggestions, setNominatimSuggestions] = useState<GeocodeSuggestion[]>([]);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [loadingNearby, setLoadingNearby] = useState(false);
+  const [showGeoNotice, setShowGeoNotice] = useState(false);
+  const suggestionBlurTimer = useRef<number | undefined>(undefined);
   const [interactionState, setInteractionState] = useState<InteractionLevel>({
     level: 'globe',
     countryName: null,
@@ -1107,6 +1136,104 @@ const PlanetExplorer: React.FC = () => {
     setSelectedItem(null);
   }, []);
 
+  /* ---- autocomplete: local suggestions (Firebase + countryData) ---- */
+  // Computed synchronously on every keystroke. Caps total local matches at 12 to keep the
+  // dropdown readable; further matches are reachable via the regular "Buscar" button.
+  const localSuggestions = useMemo<Suggestion[]>(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const out: Suggestion[] = [];
+    const seen = new Set<string>();
+    const add = (s: Suggestion) => {
+      if (seen.has(s.id) || out.length >= 12) return;
+      seen.add(s.id);
+      out.push(s);
+    };
+
+    for (const country of allCountries) {
+      if (country.name.toLowerCase().includes(q)) {
+        add({ id: `c:${country.name}`, label: country.name, subLabel: 'País', kind: 'country', country });
+      }
+      for (const city of country.cities) {
+        if (city.name.toLowerCase().includes(q)) {
+          add({ id: `ci:${country.name}:${city.name}`, label: city.name, subLabel: `Ciudad · ${country.name}`, kind: 'city', country, city });
+        }
+        for (const place of city.touristPlaces) {
+          if (place.name.toLowerCase().includes(q)) {
+            add({ id: `pl:${country.name}:${city.name}:${place.name}`, label: place.name, subLabel: `Lugar · ${city.name}`, kind: 'place', country, city, place });
+          }
+        }
+      }
+    }
+
+    for (const t of tours) {
+      if (!t.id) continue;
+      const title = (t.title || '').toLowerCase();
+      const tc = (t.city || '').toLowerCase();
+      if (title.includes(q) || tc.includes(q)) {
+        add({ id: `t:${t.id}`, label: t.title, subLabel: `Tour${t.city ? ` · ${t.city}` : ''}`, kind: 'tour', tourId: t.id });
+      }
+    }
+    for (const a of accommodations) {
+      if (!a.id) continue;
+      const name = (a.name || '').toLowerCase();
+      const ac = (a.city || '').toLowerCase();
+      if (name.includes(q) || ac.includes(q)) {
+        add({ id: `a:${a.id}`, label: a.name, subLabel: `Hospedaje${a.city ? ` · ${a.city}` : ''}`, kind: 'accommodation', accommodationId: a.id });
+      }
+    }
+
+    return out;
+  }, [searchQuery, tours, accommodations]);
+
+  /* ---- autocomplete: Nominatim suggestions (debounced) ---- */
+  // Fetch global city/place suggestions from Nominatim ~350ms after the user stops typing.
+  // Capped at 5 results. The User-Agent header is required by Nominatim's usage policy.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 3) { setNominatimSuggestions([]); return; }
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&accept-language=es`,
+          { headers: { 'User-Agent': 'TourismPlatform/1.0' } },
+        );
+        if (!res.ok) return;
+        const data: Array<{ place_id: number; lat: string; lon: string; display_name: string }> = await res.json();
+        if (cancelled) return;
+        setNominatimSuggestions(
+          data.map(d => ({
+            id: `g:${d.place_id}`,
+            kind: 'geocode' as const,
+            label: d.display_name.split(',').slice(0, 2).join(',').trim(),
+            subLabel: d.display_name,
+            lat: parseFloat(d.lat),
+            lng: parseFloat(d.lon),
+          })),
+        );
+      } catch {
+        /* network errors are silent — local suggestions still work */
+      }
+    }, 350);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+  }, [searchQuery]);
+
+  // Merge local + remote suggestions. Local first (they're free and instant), Nominatim afterwards.
+  const allSuggestions = useMemo<Suggestion[]>(() => {
+    const merged: Suggestion[] = [...localSuggestions];
+    const seenLabels = new Set(localSuggestions.map(s => s.label.toLowerCase()));
+    for (const g of nominatimSuggestions) {
+      if (merged.length >= 12) break;
+      if (seenLabels.has(g.label.toLowerCase())) continue; // skip duplicates already in local
+      merged.push(g);
+    }
+    return merged;
+  }, [localSuggestions, nominatimSuggestions]);
+
+  // Reset keyboard highlight whenever the suggestion list changes.
+  useEffect(() => { setHighlightedIndex(-1); }, [allSuggestions]);
+
   /* ---- search handler ---- */
   const handleSearch = useCallback(async () => {
     const query = searchQuery.trim();
@@ -1184,6 +1311,117 @@ const PlanetExplorer: React.FC = () => {
       setSearchAnswer('No encontramos ese lugar. Intenta con otro nombre.');
     }
   }, [searchQuery, pushCameraSnapshot]);
+
+  /* ---- autocomplete: selection handler ---- */
+  const handleSelectSuggestion = useCallback((s: Suggestion) => {
+    const st = stateRef.current;
+    setShowSuggestions(false);
+    setSearchQuery(s.label);
+    setNominatimSuggestions([]);
+
+    if (s.kind === 'country') {
+      pushCameraSnapshot([]);
+      st.selectedCountry = s.country;
+      st.currentLevel = 'country';
+      setInteractionState({ level: 'country', countryName: s.country.name, cityName: null, placeName: null });
+      setBreadcrumbs([{ label: 'Globo', level: 'globe' }]);
+      zoomToLocation(s.country.capitalLat, s.country.capitalLng, s.country.name, 'country');
+      setSearchAnswer(`Mostrando: ${s.country.name}`);
+    } else if (s.kind === 'city') {
+      pushCameraSnapshot([]);
+      st.selectedCountry = s.country;
+      st.selectedCity = s.city;
+      st.currentLevel = 'city';
+      setInteractionState({ level: 'city', countryName: s.country.name, cityName: s.city.name, placeName: null });
+      setBreadcrumbs([
+        { label: 'Globo', level: 'globe' },
+        { label: s.country.name, level: 'country' },
+      ]);
+      zoomToLocation(s.city.lat, s.city.lng, s.city.name, 'city');
+      setSearchAnswer(`Mostrando: ${s.city.name}`);
+    } else if (s.kind === 'place') {
+      pushCameraSnapshot([]);
+      st.selectedCountry = s.country;
+      st.selectedCity = s.city;
+      st.selectedPlace = s.place;
+      st.currentLevel = 'place';
+      setInteractionState({ level: 'place', countryName: s.country.name, cityName: s.city.name, placeName: s.place.name });
+      setBreadcrumbs([
+        { label: 'Globo', level: 'globe' },
+        { label: s.country.name, level: 'country' },
+        { label: s.city.name, level: 'city' },
+      ]);
+      zoomToLocation(s.place.lat, s.place.lng, s.place.name, 'place');
+      setSearchAnswer(`Mostrando: ${s.place.name}`);
+    } else if (s.kind === 'tour') {
+      const tour = tours.find(t => t.id === s.tourId);
+      if (tour) {
+        setSelectedItem({ kind: 'tour', data: tour });
+        setSearchAnswer(`Mostrando: ${tour.title}`);
+      }
+    } else if (s.kind === 'accommodation') {
+      const acc = accommodations.find(a => a.id === s.accommodationId);
+      if (acc) {
+        setSelectedItem({ kind: 'accommodation', data: acc });
+        setSearchAnswer(`Mostrando: ${acc.name}`);
+      }
+    } else if (s.kind === 'geocode') {
+      pushCameraSnapshot([]);
+      st.searchMarkers = [{ lat: s.lat, lng: s.lng, name: s.label, displayName: s.subLabel || s.label }];
+      st.searchMarkerPulse = 0;
+      st.currentLevel = 'globe';
+      st.selectedCountry = null;
+      st.selectedCity = null;
+      st.selectedPlace = null;
+      setInteractionState({ level: 'globe', countryName: null, cityName: null, placeName: null });
+      setBreadcrumbs([]);
+      zoomToLocation(s.lat, s.lng, s.label, 'country');
+      setSearchAnswer(`📍 ${s.subLabel || s.label}`);
+    }
+  }, [tours, accommodations, pushCameraSnapshot]);
+
+  /* ---- geolocation: "Use my location" ---- */
+  // Requests the browser geolocation permission and uses the resulting coords to drive the same
+  // geocode-marker flow. The disclaimer modal is shown FIRST (legal requirement); the user must
+  // accept it before the browser dialog appears, so they know why we want the permission.
+  const handleUseMyLocation = useCallback(() => {
+    setShowGeoNotice(true);
+  }, []);
+
+  const handleConfirmGeoNotice = useCallback(() => {
+    setShowGeoNotice(false);
+    if (!('geolocation' in navigator)) {
+      setSearchAnswer('Tu navegador no soporta geolocalización.');
+      return;
+    }
+    setLoadingNearby(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setLoadingNearby(false);
+        const { latitude, longitude } = pos.coords;
+        const st = stateRef.current;
+        pushCameraSnapshot([]);
+        st.searchMarkers = [{ lat: latitude, lng: longitude, name: 'Mi ubicación', displayName: 'Tu posición actual' }];
+        st.searchMarkerPulse = 0;
+        st.currentLevel = 'globe';
+        st.selectedCountry = null;
+        st.selectedCity = null;
+        st.selectedPlace = null;
+        setInteractionState({ level: 'globe', countryName: null, cityName: null, placeName: null });
+        setBreadcrumbs([]);
+        zoomToLocation(latitude, longitude, 'Mi ubicación', 'country');
+        setSearchAnswer('📍 Centrando el globo en tu ubicación. Explora los destinos cercanos.');
+      },
+      err => {
+        setLoadingNearby(false);
+        const msg = err.code === err.PERMISSION_DENIED
+          ? 'Permiso de ubicación denegado. Puedes activarlo desde la configuración del navegador.'
+          : 'No se pudo obtener tu ubicación. Intenta de nuevo.';
+        setSearchAnswer(msg);
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+    );
+  }, [pushCameraSnapshot]);
 
   const zoomToLocation = (lat: number, lng: number, name: string, level: 'country' | 'city' | 'place') => {
     const st = stateRef.current;
@@ -2257,31 +2495,145 @@ const PlanetExplorer: React.FC = () => {
         </div>
       )}
 
-      {/* Search bar — center-left on desktop, full-width top on mobile */}
+      {/* Search bar — center-left on desktop, full-width top on mobile.
+          Wears the WAI-ARIA combobox pattern so screen readers announce the suggestion list. */}
       <div className="planet-search">
-        <div className="planet-search__box">
+        <div
+          className="planet-search__box"
+          role="combobox"
+          aria-haspopup="listbox"
+          aria-owns="planet-search-suggestions"
+          aria-expanded={showSuggestions && allSuggestions.length > 0}
+        >
           <div className="planet-search__row">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth="2" style={{ flexShrink: 0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth="2" style={{ flexShrink: 0 }} aria-hidden="true">
               <circle cx="11" cy="11" r="8" />
               <path d="M21 21l-4.35-4.35" />
             </svg>
             <input
               type="text"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
-              placeholder="País, ciudad, lugar..."
+              onChange={e => { setSearchQuery(e.target.value); setShowSuggestions(true); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => {
+                // Delay so a click on a suggestion has time to register before the list closes.
+                suggestionBlurTimer.current = window.setTimeout(() => setShowSuggestions(false), 150);
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (highlightedIndex >= 0 && allSuggestions[highlightedIndex]) {
+                    handleSelectSuggestion(allSuggestions[highlightedIndex]);
+                  } else {
+                    handleSearch();
+                  }
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setShowSuggestions(true);
+                  setHighlightedIndex(i => Math.min(i + 1, allSuggestions.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setHighlightedIndex(i => Math.max(i - 1, -1));
+                } else if (e.key === 'Escape') {
+                  setShowSuggestions(false);
+                  setHighlightedIndex(-1);
+                }
+              }}
+              placeholder="País, ciudad, tour, hospedaje..."
               className="planet-search__input"
+              aria-label="Buscar destinos, tours u hospedajes"
+              aria-autocomplete="list"
+              aria-controls="planet-search-suggestions"
+              aria-activedescendant={highlightedIndex >= 0 ? `planet-search-opt-${highlightedIndex}` : undefined}
+              autoComplete="off"
             />
           </div>
-          <button onClick={handleSearch} className="planet-search__btn">Buscar</button>
+          <div className="planet-search__actions">
+            <button
+              type="button"
+              onClick={handleUseMyLocation}
+              className="planet-search__nearby"
+              aria-label="Usar mi ubicación actual para mostrar destinos cercanos"
+              disabled={loadingNearby}
+            >
+              {loadingNearby ? (
+                <span className="planet-search__nearby-spinner" aria-hidden="true" />
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                </svg>
+              )}
+              <span>Usar mi ubicación</span>
+            </button>
+            <button onClick={handleSearch} className="planet-search__btn" aria-label="Buscar">Buscar</button>
+          </div>
         </div>
+
+        {/* Suggestion dropdown */}
+        {showSuggestions && allSuggestions.length > 0 && (
+          <ul
+            id="planet-search-suggestions"
+            role="listbox"
+            className="planet-search__suggestions"
+            // Keep the list open while interacting; the input's blur timer is canceled here.
+            onMouseDown={() => { if (suggestionBlurTimer.current) window.clearTimeout(suggestionBlurTimer.current); }}
+          >
+            {allSuggestions.map((s, idx) => (
+              <li
+                key={s.id}
+                id={`planet-search-opt-${idx}`}
+                role="option"
+                aria-selected={idx === highlightedIndex}
+                className={`planet-search__suggestion${idx === highlightedIndex ? ' planet-search__suggestion--active' : ''}`}
+                onMouseEnter={() => setHighlightedIndex(idx)}
+                onClick={() => handleSelectSuggestion(s)}
+              >
+                <span className={`planet-search__kind planet-search__kind--${s.kind}`} aria-hidden="true">
+                  {s.kind === 'country' ? '🌍' : s.kind === 'city' ? '🏙️' : s.kind === 'place' ? '📍' : s.kind === 'tour' ? '🧭' : s.kind === 'accommodation' ? '🛏️' : '🔎'}
+                </span>
+                <span className="planet-search__suggestion-text">
+                  <span className="planet-search__suggestion-label">{s.label}</span>
+                  {s.subLabel && <span className="planet-search__suggestion-sub">{s.subLabel}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {(searchAnswer || dynamicLoading) && (
-          <div className="planet-search__answer">
+          <div className="planet-search__answer" role="status" aria-live="polite">
             {dynamicLoading ? 'Cargando datos de la región...' : searchAnswer}
           </div>
         )}
       </div>
+
+      {/* Geolocation consent notice — shown before invoking navigator.geolocation. Legal
+          requirement: tell the user WHY before the browser prompt appears. */}
+      {showGeoNotice && (
+        <div className="planet-geo-notice" role="dialog" aria-modal="true" aria-labelledby="planet-geo-title">
+          <div className="planet-geo-notice__card">
+            <h3 id="planet-geo-title" className="planet-geo-notice__title">Permiso de ubicación</h3>
+            <p className="planet-geo-notice__body">
+              Usaremos tu ubicación para mostrarte los destinos y tours más cercanos. No realizamos
+              rastreo continuo: la coordenada se utiliza una sola vez y no se almacena en nuestros servidores.
+            </p>
+            <p className="planet-geo-notice__legal">
+              Al continuar aceptas nuestros{' '}
+              <a href="/terminos-y-condiciones" target="_blank" rel="noopener noreferrer">Términos</a>
+              {' '}y la{' '}
+              <a href="/politica-de-privacidad" target="_blank" rel="noopener noreferrer">Política de Privacidad</a>.
+            </p>
+            <div className="planet-geo-notice__actions">
+              <button type="button" className="planet-geo-notice__cancel" onClick={() => setShowGeoNotice(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="planet-geo-notice__confirm" onClick={handleConfirmGeoNotice}>
+                Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Right info panel — context (city/country/place). Always rendered, but auto-collapses
           to a thin bar when an ItemPanel is open so the two panels don't fight for space. */}

@@ -20,6 +20,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { lazy, Suspense } from 'react';
 
 const PlanetExplorer = lazy(() => import('@/pages/PlanetExplorer'));
+const TermsPage = lazy(() => import('@/pages/legal/TermsPage'));
+const PrivacyPage = lazy(() => import('@/pages/legal/PrivacyPage'));
 
 // Admin pages
 import { AdminLayout } from '@/pages/admin/AdminLayout';
@@ -107,7 +109,7 @@ const AppContent = () => {
           Modo mantenimiento activo — solo visible para administradores
         </div>
       )}
-      <main className="flex-grow">
+      <main id="main-content" tabIndex={-1} className="flex-grow">
         <Routes>
           {/* Public routes */}
           <Route path="/" element={<Home />} />
@@ -122,6 +124,16 @@ const AppContent = () => {
           } />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/terminos-y-condiciones" element={
+            <Suspense fallback={<div className="flex justify-center items-center min-h-[60vh]"><span className="loading loading-spinner text-primary"></span></div>}>
+              <TermsPage />
+            </Suspense>
+          } />
+          <Route path="/politica-de-privacidad" element={
+            <Suspense fallback={<div className="flex justify-center items-center min-h-[60vh]"><span className="loading loading-spinner text-primary"></span></div>}>
+              <PrivacyPage />
+            </Suspense>
+          } />
 
           {/* User protected routes */}
           <Route path="/dashboard" element={
